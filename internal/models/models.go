@@ -23,6 +23,34 @@ var AllPeriods = []FixturePeriod{
 	PeriodFullTime,
 }
 
+type Position string
+
+const (
+	PositionForward    Position = "FORWARD"
+	PositionMidfielder Position = "MIDFIELDER"
+	PositionDefender   Position = "DEFENDER"
+)
+
+type Player struct {
+	PlayerID   string   `json:"playerId"`
+	FirstName  string   `json:"firstName"`
+	LastName   string   `json:"lastName"`
+	Position   Position `json:"position"`
+	TeamID     string   `json:"teamId"`
+	TeamName   string   `json:"teamName"`
+}
+
+type Selection struct {
+	GameWeekID string
+	Player1    *Player
+	Player2    *Player
+	Player3    *Player
+	Player4    *Player
+	Player5    *Player
+	Player6    *Player
+	Player7    *Player
+}
+
 type GameWeek struct {
 	GameWeekID           string `json:"gameWeekId" dynamodbav:"gameWeekId"`
 	Label                string `json:"label" dynamodbav:"label"`

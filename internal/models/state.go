@@ -5,6 +5,7 @@ type AppState struct {
 	CurrentGameWeek  *GameWeek
 	Fixtures         []Fixture
 	SelectedFixture  *Fixture
+	Selection        *Selection
 	IsAuthenticated  bool
 	Username         string
 	ErrorMessage     string
@@ -54,4 +55,8 @@ func (s *AppState) ClearMessages() {
 func (s *AppState) SetLoading(loading bool, message string) {
 	s.IsLoading = loading
 	s.LoadingMessage = message
+}
+
+func (s *AppState) SetSelection(selection *Selection) {
+	s.Selection = selection
 }

@@ -65,16 +65,49 @@ go mod download
 
 ### 4. Run the TUI
 
+**Option 1: Using the run script (recommended)**
+
 ```bash
-go run cmd/main.go
+./run.sh
 ```
 
-Or build and run:
+The script will:
+- Check for `.env` file (creates from template if missing)
+- Validate required environment variables
+- Check AWS credentials
+- Build the application if needed
+- Start the TUI
+
+**Option 2: Manual run**
 
 ```bash
+# Load environment variables
+export $(cat .env | grep -v '^#' | xargs)
+
+# Build and run
 go build -o seven-test-tui cmd/main.go
 ./seven-test-tui
 ```
+
+**Option 3: Direct run (for development)**
+
+```bash
+# Set environment variables
+export API_ENDPOINT="https://se7-int-dev.dev.api.playtheseven.com"
+export USER_POOL_ID="eu-west-2_uqwEOLO5d"
+export CLIENT_ID="your-client-id"
+export PREFIX="int-dev"
+
+# Run without building
+go run cmd/main.go
+```
+
+**First Run**:
+1. You'll be prompted for Cognito username and password
+2. After authentication, the gameweek list will load
+3. Use arrow keys or j/k to navigate
+4. Press Enter to select a gameweek (fixture view coming soon)
+5. Press q to quit
 
 ## 🎮 Usage
 
