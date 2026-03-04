@@ -32,9 +32,17 @@ func main() {
 	// Create API client
 	apiClient := aws.NewAPIClient(cfg.APIEndpoint)
 
+	// Create DynamoDB client for GameWeek table
+	// Note: Table name will be updated with prefix in the UI
+	dynamoClient, err := aws.NewDynamoDBClient(ctx, cfg.AWSRegion, cfg.Prefix+"-GameWeek")
+	if err != nil {
+		fmt.Printf("Failed to create DynamoDB client: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Run TUI with auth screen
 	p := tea.NewProgram(
-		ui.NewModel(authClient, apiClient),
+		ui.NewModel(authClient, apiClient, dynamoClient),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)

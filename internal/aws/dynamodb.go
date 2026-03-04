@@ -67,3 +67,22 @@ func (d *DynamoDBClient) UpdateFixture(ctx context.Context, item interface{}) er
 
 	return d.PutFixture(ctx, av)
 }
+
+func (d *DynamoDBClient) UpdateGameWeek(ctx context.Context, item interface{}) error {
+	av, err := attributevalue.MarshalMap(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal gameweek: %w", err)
+	}
+
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(d.tableName),
+		Item:      av,
+	}
+
+	_, err = d.client.PutItem(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to put gameweek: %w", err)
+	}
+
+	return nil
+}

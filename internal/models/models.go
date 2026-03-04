@@ -88,18 +88,20 @@ type Goal struct {
 }
 
 type Fixture struct {
-	FixtureID     string        `json:"fixtureId" dynamodbav:"fixtureId"`
-	GameWeekID    string        `json:"gameWeekId" dynamodbav:"gameWeekId"`
-	StartDate     string        `json:"startDate" dynamodbav:"startDate"`
-	Period        FixturePeriod `json:"period" dynamodbav:"period"`
-	ClockTimeMin  int           `json:"clockTimeMin" dynamodbav:"clockTimeMin"`
-	ClockTimeSec  int           `json:"clockTimeSec" dynamodbav:"clockTimeSec"`
-	HomeScore     *int          `json:"homeScore,omitempty" dynamodbav:"homeScore,omitempty"`
-	AwayScore     *int          `json:"awayScore,omitempty" dynamodbav:"awayScore,omitempty"`
-	HomeTeamID    string        `json:"homeTeamId" dynamodbav:"homeTeamId"`
-	AwayTeamID    string        `json:"awayTeamId" dynamodbav:"awayTeamId"`
-	Participants  Participants  `json:"participants" dynamodbav:"participants"`
-	Goals         []Goal        `json:"goals,omitempty" dynamodbav:"goals,omitempty"`
+	FixtureID      string                 `json:"fixtureId" dynamodbav:"fixtureId"`
+	GameWeekID     string                 `json:"gameWeekId" dynamodbav:"gameWeekId"`
+	StartDate      string                 `json:"startDate" dynamodbav:"startDate"`
+	Period         FixturePeriod          `json:"period" dynamodbav:"period"`
+	ClockTimeMin   int                    `json:"clockTimeMin" dynamodbav:"clockTimeMin"`
+	ClockTimeSec   int                    `json:"clockTimeSec" dynamodbav:"clockTimeSec"`
+	HomeScore      *int                   `json:"homeScore,omitempty" dynamodbav:"homeScore,omitempty"`
+	AwayScore      *int                   `json:"awayScore,omitempty" dynamodbav:"awayScore,omitempty"`
+	HomeTeamID     string                 `json:"homeTeamId" dynamodbav:"homeTeamId"`
+	AwayTeamID     string                 `json:"awayTeamId" dynamodbav:"awayTeamId"`
+	Participants   Participants           `json:"participants" dynamodbav:"participants"`
+	Goals          []Goal                 `json:"goals,omitempty" dynamodbav:"goals,omitempty"`
+	FixtureStatus  string                 `json:"fixtureStatus,omitempty" dynamodbav:"fixtureStatus,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
 }
 
 // Validation functions
