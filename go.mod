@@ -1,19 +1,25 @@
 module github.com/angstromsports/seven-test-tui
 
-go 1.23
+go 1.24.2
+
+require (
+	github.com/aws/aws-sdk-go-v2 v1.41.1
+	github.com/aws/aws-sdk-go-v2/config v1.32.9
+	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.32
+	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.58.0
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.55.0
+	github.com/charmbracelet/bubbles v1.0.0
+	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/charmbracelet/lipgloss v1.1.0
+)
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.41.1 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.9 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.9 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.32 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.58.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.55.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.32.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.11.17 // indirect
@@ -24,10 +30,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/charmbracelet/bubbles v1.0.0 // indirect
-	github.com/charmbracelet/bubbletea v1.3.10 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
-	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
@@ -43,9 +46,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.3.8 // indirect
 )
