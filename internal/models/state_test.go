@@ -160,3 +160,28 @@ func TestAppState_SetSelectedFixture(t *testing.T) {
 		t.Errorf("SelectedFixture.FixtureID = %q, want %q", state.SelectedFixture.FixtureID, "f1")
 	}
 }
+
+func TestAppState_SetSelection(t *testing.T) {
+	state := NewAppState()
+	selection := &Selection{GameWeekID: "gw1"}
+
+	state.SetSelection(selection)
+
+	if state.Selection == nil {
+		t.Fatal("Selection should not be nil")
+	}
+	if state.Selection.GameWeekID != "gw1" {
+		t.Errorf("Selection.GameWeekID = %q, want %q", state.Selection.GameWeekID, "gw1")
+	}
+}
+
+func TestAppState_SetSelection_Nil(t *testing.T) {
+	state := NewAppState()
+	state.Selection = &Selection{GameWeekID: "gw1"}
+
+	state.SetSelection(nil)
+
+	if state.Selection != nil {
+		t.Error("Selection should be nil")
+	}
+}
