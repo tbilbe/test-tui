@@ -1,5 +1,6 @@
 # Binaries
 seven-test-tui
+dist/
 
 # Environment
 .env
@@ -10,3 +11,9 @@ seven-test-tui
 
 # OS
 .DS_Store
+
+# Logs
+*.log
+
+# Test coverage
+coverage.out

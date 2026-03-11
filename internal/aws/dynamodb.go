@@ -86,3 +86,20 @@ func (d *DynamoDBClient) UpdateGameWeek(ctx context.Context, item interface{}) e
 
 	return nil
 }
+
+func (d *DynamoDBClient) QueryPlayersByGameWeek(ctx context.Context, gameWeekID string) ([]map[string]types.AttributeValue, error) {
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(d.tableName),
+		KeyConditionExpression: aws.String("gameWeekId = :gw"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":gw": &types.AttributeValueMemberS{Value: gameWeekID},
+		},
+	}
+
+	result, err := d.client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query players: %w", err)
+	}
+
+	return result.Items, nil
+}

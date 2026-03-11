@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/angstromsports/seven-test-tui/internal/aws"
 	"github.com/angstromsports/seven-test-tui/internal/models"
 )
@@ -98,6 +99,16 @@ type Model struct {
 	fieldOptionIdx     int
 	showBatchModal     bool
 	batchPresetIdx     int
+	fixturePlayers     map[string]FixturePlayers // fixtureId -> players
+	showGoalModal      bool
+	goalModalIdx       int
+	goalModalField     int // 0=player, 1=timeMin
+	pendingGoals       []models.Goal
+}
+
+type FixturePlayers struct {
+	HomePlayers []models.Player
+	AwayPlayers []models.Player
 }
 
 func NewModel(authClient *aws.AuthClient, apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient) Model {
@@ -162,6 +173,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.state.SetFixtures(msg.fixtures)
 			m.buildFixturesTable()
+			// Fetch players for all fixtures
+			if m.state.CurrentGameWeek != nil {
+				return m, fetchPlayersCmd(m.apiClient, m.state.CurrentGameWeek.GameWeekID, msg.fixtures)
+			}
+		}
+		return m, nil
+	
+	case playersLoadedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			// Build fixture players map
+			m.fixturePlayers = make(map[string]FixturePlayers)
+			for _, fixture := range m.state.Fixtures {
+				var homePlayers, awayPlayers []models.Player
+				for _, player := range msg.players {
+					if player.FixtureID == fixture.FixtureID {
+						if player.TeamID == fixture.Participants.Home.TeamID {
+							homePlayers = append(homePlayers, player)
+						} else if player.TeamID == fixture.Participants.Away.TeamID {
+							awayPlayers = append(awayPlayers, player)
+						}
+					}
+				}
+				m.fixturePlayers[fixture.FixtureID] = FixturePlayers{
+					HomePlayers: homePlayers,
+					AwayPlayers: awayPlayers,
+				}
+			}
 		}
 		return m, nil
 
@@ -299,6 +339,15 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "tab":
+			// In goal modal, switch between player and time fields
+			if m.showGoalModal && !m.showFieldSelect {
+				if m.goalModalField == 0 {
+					m.goalModalField = 1
+				} else {
+					m.goalModalField = 0
+				}
+				return m, nil
+			}
 			// Cycle between gameweek and fixtures panes
 			if m.focusedPane == focusGameWeek {
 				m.focusedPane = focusFixtures
@@ -307,6 +356,55 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
+			// Goal modal - select player or time
+			if m.showGoalModal && !m.showFieldSelect {
+				m.showFieldSelect = true
+				m.fieldOptionIdx = 0
+				
+				if m.goalModalField == 0 {
+					// Player selection - build list from home/away players
+					fixture := m.state.Fixtures[m.selectedFixtureIdx]
+					players := m.fixturePlayers[fixture.FixtureID]
+					
+					// Determine which team based on goal index
+					homeGoals := 0
+					if fixture.HomeScore != nil {
+						homeGoals = *fixture.HomeScore
+					}
+					
+					m.fieldOptions = []string{}
+					if m.goalModalIdx < homeGoals {
+						// Home goal
+						for i, p := range players.HomePlayers {
+							if i >= 11 {
+								break
+							}
+							m.fieldOptions = append(m.fieldOptions, p.PlayerName)
+						}
+					} else {
+						// Away goal
+						for i, p := range players.AwayPlayers {
+							if i >= 11 {
+								break
+							}
+							m.fieldOptions = append(m.fieldOptions, p.PlayerName)
+						}
+					}
+				} else {
+					// Time selection - 5 minute increments
+					m.fieldOptions = []string{}
+					for i := 0; i <= 90; i += 5 {
+						m.fieldOptions = append(m.fieldOptions, fmt.Sprintf("%d", i))
+					}
+				}
+				return m, nil
+			}
+			// Apply selection in goal modal
+			if m.showGoalModal && m.showFieldSelect {
+				m.applyGoalFieldSelection()
+				m.showFieldSelect = false
+				return m, nil
+			}
 			// Batch modal submit
 			if m.showBatchModal {
 				m.showBatchModal = false
@@ -355,9 +453,59 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "s":
+			// Save goals from goal modal
+			if m.showGoalModal {
+				fixture := &m.state.Fixtures[m.selectedFixtureIdx]
+				fixture.Goals = m.pendingGoals
+				m.showGoalModal = false
+				m.fixtureSelectMode = false
+				m.pendingGoals = nil
+				return m, updateFixtureCmd(fixture, m.prefix)
+			}
 			// Save fixture changes
 			if m.editingFixture && m.selectedFixtureIdx < len(m.state.Fixtures) {
 				fixture := m.state.Fixtures[m.selectedFixtureIdx]
+				
+				// Check if goals need to be assigned
+				homeGoals := 0
+				awayGoals := 0
+				if fixture.HomeScore != nil {
+					homeGoals = *fixture.HomeScore
+				}
+				if fixture.AwayScore != nil {
+					awayGoals = *fixture.AwayScore
+				}
+				
+				totalGoals := homeGoals + awayGoals
+				currentGoals := len(fixture.Goals)
+				
+				// If goals changed, open goal assignment modal
+				if totalGoals != currentGoals {
+					logger.Printf("Goals changed: %d current, %d needed", currentGoals, totalGoals)
+					m.editingFixture = false
+					m.showGoalModal = true
+					m.goalModalIdx = 0
+					m.goalModalField = 0
+					
+					// Build pending goals array
+					m.pendingGoals = make([]models.Goal, totalGoals)
+					// Copy existing goals
+					for i := 0; i < len(fixture.Goals) && i < totalGoals; i++ {
+						m.pendingGoals[i] = fixture.Goals[i]
+					}
+					// Initialize new goals
+					for i := len(fixture.Goals); i < totalGoals; i++ {
+						m.pendingGoals[i] = models.Goal{
+							GoalID:  fmt.Sprintf("%d", time.Now().UnixNano()+int64(i)),
+							Type:    "GOAL",
+							TimeMin: 0,
+							TimeSec: 0,
+						}
+					}
+					return m, nil
+				}
+				
+				// No goal changes, save directly
 				m.editingFixture = false
 				m.fixtureSelectMode = false
 				return m, updateFixtureCmd(&fixture, m.prefix)
@@ -365,7 +513,11 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "esc":
 			// Exit selection mode or close modal
-			if m.showFieldSelect {
+			if m.showGoalModal {
+				m.showGoalModal = false
+				m.pendingGoals = nil
+				return m, nil
+			} else if m.showFieldSelect {
 				m.showFieldSelect = false
 				return m, nil
 			} else if m.showBatchModal {
@@ -381,7 +533,12 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "up", "k":
-			if m.showFieldSelect && m.fieldOptionIdx > 0 {
+			if m.showGoalModal && !m.showFieldSelect {
+				// Navigate between goals
+				if m.goalModalIdx > 0 {
+					m.goalModalIdx--
+				}
+			} else if m.showFieldSelect && m.fieldOptionIdx > 0 {
 				m.fieldOptionIdx--
 			} else if m.showBatchModal && m.batchPresetIdx > 0 {
 				m.batchPresetIdx--
@@ -396,7 +553,12 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "down", "j":
-			if m.showFieldSelect && m.fieldOptionIdx < len(m.fieldOptions)-1 {
+			if m.showGoalModal && !m.showFieldSelect {
+				// Navigate between goals
+				if m.goalModalIdx < len(m.pendingGoals)-1 {
+					m.goalModalIdx++
+				}
+			} else if m.showFieldSelect && m.fieldOptionIdx < len(m.fieldOptions)-1 {
 				m.fieldOptionIdx++
 			} else if m.showBatchModal && m.batchPresetIdx < 3 {
 				m.batchPresetIdx++
@@ -572,6 +734,67 @@ func (m *Model) applyFieldSelection() {
 	}
 }
 
+func (m *Model) applyGoalFieldSelection() {
+	if m.goalModalIdx >= len(m.pendingGoals) || len(m.fieldOptions) == 0 {
+		return
+	}
+	
+	goal := &m.pendingGoals[m.goalModalIdx]
+	selected := m.fieldOptions[m.fieldOptionIdx]
+	fixture := m.state.Fixtures[m.selectedFixtureIdx]
+	players := m.fixturePlayers[fixture.FixtureID]
+	
+	if m.goalModalField == 0 {
+		// Player selection
+		homeGoals := 0
+		if fixture.HomeScore != nil {
+			homeGoals = *fixture.HomeScore
+		}
+		
+		var selectedPlayer *models.Player
+		if m.goalModalIdx < homeGoals {
+			// Home player
+			for i := range players.HomePlayers {
+				if i >= 11 {
+					break
+				}
+				if players.HomePlayers[i].PlayerName == selected {
+					selectedPlayer = &players.HomePlayers[i]
+					break
+				}
+			}
+		} else {
+			// Away player
+			for i := range players.AwayPlayers {
+				if i >= 11 {
+					break
+				}
+				if players.AwayPlayers[i].PlayerName == selected {
+					selectedPlayer = &players.AwayPlayers[i]
+					break
+				}
+			}
+		}
+		
+		if selectedPlayer != nil {
+			goal.PlayerID = selectedPlayer.PlayerID
+			goal.PlayerName = selectedPlayer.PlayerName
+			goal.TeamID = selectedPlayer.TeamID
+		}
+	} else {
+		// Time selection
+		timeMin, _ := strconv.Atoi(selected)
+		goal.TimeMin = timeMin
+		
+		// Auto-assign period based on time
+		if timeMin <= 45 {
+			goal.Period = models.PeriodFirstHalf
+		} else {
+			goal.Period = models.PeriodSecondHalf
+		}
+	}
+}
+
 func (m *Model) buildFixturesTable() {
 	columns := []table.Column{
 		{Title: "Home", Width: 15},
@@ -702,6 +925,11 @@ func (m Model) View() string {
 			modal := m.viewBatchModal()
 			view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 		}
+		// Overlay goal modal
+		if m.showGoalModal {
+			modal := m.viewGoalModal()
+			view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+		}
 		// Overlay edit modal if editing
 		if m.editingFixture && m.selectedFixtureIdx < len(m.state.Fixtures) {
 			modal := m.viewEditModal()
@@ -779,7 +1007,59 @@ func (m Model) viewFixtureScreen() string {
 	fixturesPanel := m.viewFixturesPanel()
 	row1 := lipgloss.JoinHorizontal(lipgloss.Top, gwPanel, fixturesPanel)
 
-	return row1
+	// Row 2: Players Panel (full width)
+	playersPanel := m.viewPlayersPanel()
+
+	return lipgloss.JoinVertical(lipgloss.Left, row1, playersPanel)
+}
+
+func (m Model) viewPlayersPanel() string {
+	borderColor := lipgloss.Color("63")
+	
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(1, 2).
+		Width(m.width - 4).
+		Height((m.height / 2) - 4)
+	
+	// Get players for selected fixture
+	if m.selectedFixtureIdx >= len(m.state.Fixtures) {
+		return style.Render("No fixture selected")
+	}
+	
+	fixture := m.state.Fixtures[m.selectedFixtureIdx]
+	players, ok := m.fixturePlayers[fixture.FixtureID]
+	if !ok {
+		return style.Render("Loading players...")
+	}
+	
+	// Build home and away columns
+	homeContent := titleStyle.Render(fixture.Participants.Home.TeamNameShort) + "\n\n"
+	for i, p := range players.HomePlayers {
+		if i >= 11 {
+			break
+		}
+		homeContent += fmt.Sprintf("#%-2d %-20s\n", p.ShirtNumber, p.PlayerName)
+	}
+	
+	awayContent := titleStyle.Render(fixture.Participants.Away.TeamNameShort) + "\n\n"
+	for i, p := range players.AwayPlayers {
+		if i >= 11 {
+			break
+		}
+		awayContent += fmt.Sprintf("#%-2d %-20s\n", p.ShirtNumber, p.PlayerName)
+	}
+	
+	// Create two columns
+	homeStyle := lipgloss.NewStyle().Width((m.width - 8) / 2)
+	awayStyle := lipgloss.NewStyle().Width((m.width - 8) / 2)
+	
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, 
+		homeStyle.Render(homeContent), 
+		awayStyle.Render(awayContent))
+	
+	return style.Render(columns)
 }
 
 func (m Model) viewTeamPanel() string {
@@ -1029,6 +1309,83 @@ func (m Model) viewBatchModal() string {
 	}
 	
 	content += "\n" + normalStyle.Render("↑↓: select • enter: apply • esc: cancel")
+	
+	return modalStyle.Render(content)
+}
+
+func (m Model) viewGoalModal() string {
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("205")).
+		Padding(1, 2).
+		Width(70)
+	
+	fixture := m.state.Fixtures[m.selectedFixtureIdx]
+	
+	content := titleStyle.Render("Assign Goal Scorers") + "\n\n"
+	content += fmt.Sprintf("%s vs %s\n\n", 
+		fixture.Participants.Home.TeamNameShort, 
+		fixture.Participants.Away.TeamNameShort)
+	
+	homeGoals := 0
+	if fixture.HomeScore != nil {
+		homeGoals = *fixture.HomeScore
+	}
+	_ = homeGoals // Used for determining team assignment
+	
+	// Display goals
+	for i, goal := range m.pendingGoals {
+		isHome := i < homeGoals
+		teamName := fixture.Participants.Away.TeamNameShort
+		if isHome {
+			teamName = fixture.Participants.Home.TeamNameShort
+		}
+		
+		prefix := "  "
+		if i == m.goalModalIdx {
+			prefix = "> "
+		}
+		
+		playerName := goal.PlayerName
+		if playerName == "" {
+			playerName = "[Select Player]"
+		}
+		
+		timeStr := fmt.Sprintf("%d'", goal.TimeMin)
+		if goal.TimeMin == 0 {
+			timeStr = "[Select Time]"
+		}
+		
+		// Highlight current field
+		if i == m.goalModalIdx {
+			if m.goalModalField == 0 {
+				playerName = highlightStyle.Render(playerName)
+			} else {
+				timeStr = highlightStyle.Render(timeStr)
+			}
+		}
+		
+		content += fmt.Sprintf("%s%s: %s - %s\n", prefix, teamName, playerName, timeStr)
+	}
+	
+	// Show dropdown if field select is active
+	if m.showFieldSelect {
+		content += "\n" + titleStyle.Render("Select:") + "\n"
+		for i, opt := range m.fieldOptions {
+			if i == m.fieldOptionIdx {
+				content += highlightStyle.Render("> "+opt) + "\n"
+			} else {
+				content += normalStyle.Render("  "+opt) + "\n"
+			}
+			if i >= 10 {
+				content += normalStyle.Render(fmt.Sprintf("  ... (%d more)\n", len(m.fieldOptions)-i-1))
+				break
+			}
+		}
+		content += "\n" + helpStyle.Render("↑↓: select • enter: apply • esc: cancel")
+	} else {
+		content += "\n" + helpStyle.Render("↑↓: navigate goals • tab: switch field • enter: select • s: save • esc: cancel")
+	}
 	
 	return modalStyle.Render(content)
 }
@@ -1387,6 +1744,12 @@ func updateFixtureCmd(fixture *models.Fixture, prefix string) tea.Cmd {
 	return func() tea.Msg {
 		logger.Printf("Updating fixture: %s", fixture.FixtureID)
 		
+		// Validate before saving
+		if err := fixture.Validate(); err != nil {
+			logger.Printf("ERROR: Validation failed: %v", err)
+			return fixtureUpdatedMsg{err: fmt.Errorf("validation failed: %w", err)}
+		}
+		
 		ctx := context.Background()
 		
 		// Create DynamoDB client for Fixtures table
@@ -1489,6 +1852,12 @@ func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix str
 			
 			logger.Printf("  Period: %s, Clock: %d:%d", f.Period, f.ClockTimeMin, f.ClockTimeSec)
 			
+			// Validate before saving
+			if err := f.Validate(); err != nil {
+				logger.Printf("ERROR: Validation failed for fixture %s: %v", f.FixtureID, err)
+				return batchUpdatedMsg{err: fmt.Errorf("validation failed for %s: %w", f.FixtureID, err)}
+			}
+			
 			// Ensure metadata
 			if f.Metadata == nil {
 				f.Metadata = map[string]interface{}{
@@ -1527,11 +1896,69 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
+func getStringFromAttr(m map[string]types.AttributeValue, key string) string {
+	if v, ok := m[key].(*types.AttributeValueMemberS); ok {
+		return v.Value
+	}
+	return ""
+}
+
+func getIntFromAttr(m map[string]types.AttributeValue, key string) int {
+	if v, ok := m[key].(*types.AttributeValueMemberN); ok {
+		val, _ := strconv.Atoi(v.Value)
+		return val
+	}
+	return 0
+}
+
 func getInt(m map[string]interface{}, key string) int {
 	if v, ok := m[key].(float64); ok {
 		return int(v)
 	}
 	return 0
+}
+
+func fetchPlayersCmd(apiClient *aws.APIClient, gameWeekID string, fixtures []models.Fixture) tea.Cmd {
+	return func() tea.Msg {
+		logger.Printf("Fetching players for gameweek: %s via API", gameWeekID)
+		
+		ctx := context.Background()
+		
+		// Call API to get players
+		data, err := apiClient.GetGameWeekPlayers(ctx)
+		if err != nil {
+			logger.Printf("ERROR: Failed to fetch players from API: %v", err)
+			return playersLoadedMsg{err: err}
+		}
+		
+		// Parse players from response
+		var players []models.Player
+		if playerList, ok := data["players"].([]interface{}); ok {
+			logger.Printf("Found %d players in API response", len(playerList))
+			for _, item := range playerList {
+				if playerMap, ok := item.(map[string]interface{}); ok {
+					player := models.Player{
+						PlayerID:    getString(playerMap, "playerId"),
+						PlayerName:  getString(playerMap, "playerName"),
+						FirstName:   getString(playerMap, "playerFirstName"),
+						LastName:    getString(playerMap, "playerShortName"),
+						Position:    models.Position(getString(playerMap, "position")),
+						TeamID:      getString(playerMap, "teamId"),
+						TeamName:    getString(playerMap, "teamName"),
+						ShirtNumber: getInt(playerMap, "shirtNumber"),
+						FixtureID:   getString(playerMap, "fixtureId"),
+					}
+					players = append(players, player)
+				}
+			}
+		} else {
+			logger.Println("ERROR: Invalid players data structure from API")
+			return playersLoadedMsg{err: fmt.Errorf("invalid players data structure")}
+		}
+		
+		logger.Printf("Parsed %d players from API", len(players))
+		return playersLoadedMsg{players: players}
+	}
 }
 
 func triggerGitHubActionCmd(prefix string) tea.Cmd {

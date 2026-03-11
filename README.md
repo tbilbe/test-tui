@@ -2,6 +2,39 @@
 
 A terminal user interface (TUI) application for testing and QA on the Seven mobile app. This tool removes the requirement to understand backend processes and data structures when testing the mobile app.
 
+## 📥 Download & Install
+
+### Option 1: Download Pre-built Binary (Recommended)
+
+1. Go to the [Releases page](../../releases)
+2. Download the binary for your platform:
+   - **macOS (Apple Silicon)**: `seven-test-tui-darwin-arm64`
+   - **macOS (Intel)**: `seven-test-tui-darwin-amd64`
+   - **Linux**: `seven-test-tui-linux-amd64`
+   - **Windows**: `seven-test-tui-windows-amd64.exe`
+
+3. Make it executable (macOS/Linux):
+   ```bash
+   chmod +x seven-test-tui-darwin-arm64
+   ```
+
+4. Run it:
+   ```bash
+   ./seven-test-tui-darwin-arm64
+   ```
+
+> **Tip**: Rename the binary to `seven-test-tui` and move it to a directory in your PATH (e.g., `/usr/local/bin/`) for easier access.
+
+### Option 2: Build from Source
+
+Requires Go 1.23+:
+```bash
+git clone https://github.com/angstromsports/seven-test-tui.git
+cd seven-test-tui
+go build -o seven-test-tui ./cmd/main.go
+./seven-test-tui
+```
+
 ## 🎯 Purpose
 
 Simplifies testing workflows by providing an intuitive interface for:
@@ -13,7 +46,6 @@ Simplifies testing workflows by providing an intuitive interface for:
 
 ### Prerequisites
 
-- **Go 1.26+**: [Install Go](https://go.dev/dl/)
 - **AWS CLI**: [Installation guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - **AWS SSO Access**: Access to Angstrom Seven AWS account with `seven_engineer_seven_dev` role
 
@@ -39,74 +71,30 @@ aws sso login --profile seven_engineer_seven_dev-339713102567
 export AWS_PROFILE=seven_engineer_seven_dev-339713102567
 ```
 
-### 2. Environment Configuration
-
-Create a `.env` file or export environment variables:
+### 2. Set Environment Variables
 
 ```bash
 export API_ENDPOINT="https://se7-int-dev.dev.api.playtheseven.com"
 export USER_POOL_ID="eu-west-2_uqwEOLO5d"
 export CLIENT_ID="your-cognito-client-id"
 export PREFIX="int-dev"
-export AWS_REGION="eu-west-2"
 ```
 
 **Finding your values**:
-- `API_ENDPOINT`: AWS Console → API Gateway → Select your prefix → Stages
-- `USER_POOL_ID`: AWS Console → Cognito → User Pools
 - `CLIENT_ID`: AWS Console → Cognito → User Pools → App Clients
 - `PREFIX`: Your environment prefix (e.g., `int-dev`, `SE7-2001`)
 
-### 3. Install Dependencies
+### 3. Run the Application
 
 ```bash
-go mod download
-```
-
-### 4. Run the TUI
-
-**Option 1: Using the run script (recommended)**
-
-```bash
-./run.sh
-```
-
-The script will:
-- Check for `.env` file (creates from template if missing)
-- Validate required environment variables
-- Check AWS credentials
-- Build the application if needed
-- Start the TUI
-
-**Option 2: Manual run**
-
-```bash
-# Load environment variables
-export $(cat .env | grep -v '^#' | xargs)
-
-# Build and run
-go build -o seven-test-tui cmd/main.go
 ./seven-test-tui
-```
-
-**Option 3: Direct run (for development)**
-
-```bash
-# Set environment variables
-export API_ENDPOINT="https://se7-int-dev.dev.api.playtheseven.com"
-export USER_POOL_ID="eu-west-2_uqwEOLO5d"
-export CLIENT_ID="your-client-id"
-export PREFIX="int-dev"
-
-# Run without building
-go run cmd/main.go
 ```
 
 **First Run**:
 1. You'll be prompted for Cognito username and password
 2. After authentication, the gameweek list will load
 3. Use arrow keys or j/k to navigate
-4. Press Enter to select a gameweek (fixture view coming soon)
+4. Press Enter to select a gameweek
 5. Press q to quit
 
 ## 🎮 Usage

@@ -32,12 +32,15 @@ const (
 )
 
 type Player struct {
-	PlayerID   string   `json:"playerId"`
-	FirstName  string   `json:"firstName"`
-	LastName   string   `json:"lastName"`
-	Position   Position `json:"position"`
-	TeamID     string   `json:"teamId"`
-	TeamName   string   `json:"teamName"`
+	PlayerID    string   `json:"playerId"`
+	FirstName   string   `json:"firstName"`
+	LastName    string   `json:"lastName"`
+	PlayerName  string   `json:"playerName"`
+	Position    Position `json:"position"`
+	TeamID      string   `json:"teamId"`
+	TeamName    string   `json:"teamName"`
+	ShirtNumber int      `json:"shirtNumber"`
+	FixtureID   string   `json:"fixtureId"`
 }
 
 type Selection struct {
