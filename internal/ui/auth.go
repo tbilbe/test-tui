@@ -8,15 +8,15 @@ import (
 
 var (
 	authBoxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("63")).
-		Padding(1, 2).
-		Width(50)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("63")).
+			Padding(1, 2).
+			Width(50)
 
 	authTitleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("205")).
-		MarginBottom(1)
+			Bold(true).
+			Foreground(lipgloss.Color("205")).
+			MarginBottom(1)
 )
 
 type AuthScreen struct {

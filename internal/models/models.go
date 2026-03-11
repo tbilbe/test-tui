@@ -55,14 +55,14 @@ type Selection struct {
 }
 
 type GameWeek struct {
-	GameWeekID           string `json:"gameWeekId" dynamodbav:"gameWeekId"`
-	Label                string `json:"label" dynamodbav:"label"`
-	FixturesStartDate    string `json:"fixturesStartDate" dynamodbav:"fixturesStartDate"`
-	FixturesEndDate      string `json:"fixturesEndDate" dynamodbav:"fixturesEndDate"`
-	CustomerStartDate    string `json:"customerStartDate" dynamodbav:"customerStartDate"`
-	CustomerEndDate      string `json:"customerEndDate" dynamodbav:"customerEndDate"`
+	GameWeekID            string `json:"gameWeekId" dynamodbav:"gameWeekId"`
+	Label                 string `json:"label" dynamodbav:"label"`
+	FixturesStartDate     string `json:"fixturesStartDate" dynamodbav:"fixturesStartDate"`
+	FixturesEndDate       string `json:"fixturesEndDate" dynamodbav:"fixturesEndDate"`
+	CustomerStartDate     string `json:"customerStartDate" dynamodbav:"customerStartDate"`
+	CustomerEndDate       string `json:"customerEndDate" dynamodbav:"customerEndDate"`
 	CompetitionCalendarID string `json:"competitionCalendarId" dynamodbav:"competitionCalendarId"`
-	Locked               *bool  `json:"locked,omitempty" dynamodbav:"locked,omitempty"`
+	Locked                *bool  `json:"locked,omitempty" dynamodbav:"locked,omitempty"`
 }
 
 type Team struct {
@@ -79,32 +79,32 @@ type Participants struct {
 }
 
 type Goal struct {
-	GoalID         string        `json:"goalId" dynamodbav:"goalId"`
-	TimeMin        int           `json:"timeMin" dynamodbav:"timeMin"`
-	TimeSec        int           `json:"timeSec" dynamodbav:"timeSec"`
-	Type           string        `json:"type" dynamodbav:"type"`
-	PlayerID       string        `json:"playerId" dynamodbav:"playerId"`
-	PlayerName     string        `json:"playerName" dynamodbav:"playerName"`
-	Period         FixturePeriod `json:"period" dynamodbav:"period"`
-	TeamID         string        `json:"teamId" dynamodbav:"teamId"`
-	SevenGoalType  string        `json:"sevenGoalType" dynamodbav:"sevenGoalType"`
+	GoalID        string        `json:"goalId" dynamodbav:"goalId"`
+	TimeMin       int           `json:"timeMin" dynamodbav:"timeMin"`
+	TimeSec       int           `json:"timeSec" dynamodbav:"timeSec"`
+	Type          string        `json:"type" dynamodbav:"type"`
+	PlayerID      string        `json:"playerId" dynamodbav:"playerId"`
+	PlayerName    string        `json:"playerName" dynamodbav:"playerName"`
+	Period        FixturePeriod `json:"period" dynamodbav:"period"`
+	TeamID        string        `json:"teamId" dynamodbav:"teamId"`
+	SevenGoalType string        `json:"sevenGoalType" dynamodbav:"sevenGoalType"`
 }
 
 type Fixture struct {
-	FixtureID      string                 `json:"fixtureId" dynamodbav:"fixtureId"`
-	GameWeekID     string                 `json:"gameWeekId" dynamodbav:"gameWeekId"`
-	StartDate      string                 `json:"startDate" dynamodbav:"startDate"`
-	Period         FixturePeriod          `json:"period" dynamodbav:"period"`
-	ClockTimeMin   int                    `json:"clockTimeMin" dynamodbav:"clockTimeMin"`
-	ClockTimeSec   int                    `json:"clockTimeSec" dynamodbav:"clockTimeSec"`
-	HomeScore      *int                   `json:"homeScore,omitempty" dynamodbav:"homeScore,omitempty"`
-	AwayScore      *int                   `json:"awayScore,omitempty" dynamodbav:"awayScore,omitempty"`
-	HomeTeamID     string                 `json:"homeTeamId" dynamodbav:"homeTeamId"`
-	AwayTeamID     string                 `json:"awayTeamId" dynamodbav:"awayTeamId"`
-	Participants   Participants           `json:"participants" dynamodbav:"participants"`
-	Goals          []Goal                 `json:"goals,omitempty" dynamodbav:"goals,omitempty"`
-	FixtureStatus  string                 `json:"fixtureStatus,omitempty" dynamodbav:"fixtureStatus,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
+	FixtureID     string                 `json:"fixtureId" dynamodbav:"fixtureId"`
+	GameWeekID    string                 `json:"gameWeekId" dynamodbav:"gameWeekId"`
+	StartDate     string                 `json:"startDate" dynamodbav:"startDate"`
+	Period        FixturePeriod          `json:"period" dynamodbav:"period"`
+	ClockTimeMin  int                    `json:"clockTimeMin" dynamodbav:"clockTimeMin"`
+	ClockTimeSec  int                    `json:"clockTimeSec" dynamodbav:"clockTimeSec"`
+	HomeScore     *int                   `json:"homeScore,omitempty" dynamodbav:"homeScore,omitempty"`
+	AwayScore     *int                   `json:"awayScore,omitempty" dynamodbav:"awayScore,omitempty"`
+	HomeTeamID    string                 `json:"homeTeamId" dynamodbav:"homeTeamId"`
+	AwayTeamID    string                 `json:"awayTeamId" dynamodbav:"awayTeamId"`
+	Participants  Participants           `json:"participants" dynamodbav:"participants"`
+	Goals         []Goal                 `json:"goals,omitempty" dynamodbav:"goals,omitempty"`
+	FixtureStatus string                 `json:"fixtureStatus,omitempty" dynamodbav:"fixtureStatus,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
 }
 
 // Validation functions

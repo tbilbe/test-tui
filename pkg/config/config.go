@@ -16,11 +16,11 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		APIEndpoint:  getEnv("API_ENDPOINT", ""),
-		UserPoolID:   getEnv("USER_POOL_ID", ""),
-		ClientID:     getEnv("CLIENT_ID", ""),
-		Prefix:       getEnv("PREFIX", "int-dev"),
-		AWSRegion:    getEnv("AWS_REGION", "eu-west-2"),
+		APIEndpoint: getEnv("API_ENDPOINT", ""),
+		UserPoolID:  getEnv("USER_POOL_ID", ""),
+		ClientID:    getEnv("CLIENT_ID", ""),
+		Prefix:      getEnv("PREFIX", "int-dev"),
+		AWSRegion:   getEnv("AWS_REGION", "eu-west-2"),
 	}
 
 	// Construct fixture table name from prefix

@@ -13,12 +13,12 @@ import (
 	"strconv"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/angstromsports/seven-test-tui/internal/aws"
 	"github.com/angstromsports/seven-test-tui/internal/models"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 var logger *log.Logger
@@ -35,27 +35,27 @@ func init() {
 
 var (
 	boxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("63")).
-		Padding(1, 2)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("63")).
+			Padding(1, 2)
 
 	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("205")).
-		MarginBottom(1)
+			Bold(true).
+			Foreground(lipgloss.Color("205")).
+			MarginBottom(1)
 
 	highlightStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("170")).
-		Bold(true)
+			Foreground(lipgloss.Color("170")).
+			Bold(true)
 
 	normalStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240"))
-	
+			Foreground(lipgloss.Color("240"))
+
 	helpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245"))
+			Foreground(lipgloss.Color("245"))
 
 	inputStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("86"))
+			Foreground(lipgloss.Color("86"))
 )
 
 type screenType int
@@ -179,7 +179,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	
+
 	case playersLoadedMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -253,7 +253,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	
+
 	case githubActionMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -318,7 +318,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 				break
 		// 			}
 		// 		}
-		// 		
+		//
 		// 		if currentGW == nil || currentGW.GameWeekID != m.state.CurrentGameWeek.GameWeekID {
 		// 			m.err = fmt.Errorf("can only create team for current gameweek")
 		// 			return m, nil
@@ -360,18 +360,18 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showGoalModal && !m.showFieldSelect {
 				m.showFieldSelect = true
 				m.fieldOptionIdx = 0
-				
+
 				if m.goalModalField == 0 {
 					// Player selection - build list from home/away players
 					fixture := m.state.Fixtures[m.selectedFixtureIdx]
 					players := m.fixturePlayers[fixture.FixtureID]
-					
+
 					// Determine which team based on goal index
 					homeGoals := 0
 					if fixture.HomeScore != nil {
 						homeGoals = *fixture.HomeScore
 					}
-					
+
 					m.fieldOptions = []string{}
 					if m.goalModalIdx < homeGoals {
 						// Home goal
@@ -465,7 +465,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Save fixture changes
 			if m.editingFixture && m.selectedFixtureIdx < len(m.state.Fixtures) {
 				fixture := m.state.Fixtures[m.selectedFixtureIdx]
-				
+
 				// Check if goals need to be assigned
 				homeGoals := 0
 				awayGoals := 0
@@ -475,10 +475,10 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if fixture.AwayScore != nil {
 					awayGoals = *fixture.AwayScore
 				}
-				
+
 				totalGoals := homeGoals + awayGoals
 				currentGoals := len(fixture.Goals)
-				
+
 				// If goals changed, open goal assignment modal
 				if totalGoals != currentGoals {
 					logger.Printf("Goals changed: %d current, %d needed", currentGoals, totalGoals)
@@ -486,7 +486,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.showGoalModal = true
 					m.goalModalIdx = 0
 					m.goalModalField = 0
-					
+
 					// Build pending goals array
 					m.pendingGoals = make([]models.Goal, totalGoals)
 					// Copy existing goals
@@ -504,7 +504,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m, nil
 				}
-				
+
 				// No goal changes, save directly
 				m.editingFixture = false
 				m.fixtureSelectMode = false
@@ -621,7 +621,7 @@ func (m Model) updatePrefixScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.apiClient = aws.NewAPIClient(fmt.Sprintf("https://%s.dev.api.playtheseven.com", m.input))
 			}
 			m.apiClient.SetIDToken(m.authClient.GetIDToken())
-			
+
 			// Recreate DynamoDB client with correct table name
 			ctx := context.Background()
 			tableName := m.prefix + "-GameWeek"
@@ -634,7 +634,7 @@ func (m Model) updatePrefixScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.dynamoClient = dynamoClient
-			
+
 			m.input = ""
 			m.currentScreen = gameweekScreenType
 			return m, fetchGameWeeksCmd(m.apiClient)
@@ -646,8 +646,8 @@ func (m Model) updatePrefixScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Allow alphanumeric and dash
 			if len(msg.String()) == 1 {
 				char := msg.String()[0]
-				if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || 
-				   (char >= '0' && char <= '9') || char == '-' {
+				if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+					(char >= '0' && char <= '9') || char == '-' {
 					m.input += msg.String()
 				}
 			}
@@ -660,9 +660,9 @@ func (m *Model) incrementFixtureField(delta int) {
 	if m.selectedFixtureIdx >= len(m.state.Fixtures) {
 		return
 	}
-	
+
 	f := &m.state.Fixtures[m.selectedFixtureIdx]
-	
+
 	switch m.editModalField {
 	case 0: // Period
 		periods := []models.FixturePeriod{
@@ -718,10 +718,10 @@ func (m *Model) applyFieldSelection() {
 	if m.selectedFixtureIdx >= len(m.state.Fixtures) || len(m.fieldOptions) == 0 {
 		return
 	}
-	
+
 	f := &m.state.Fixtures[m.selectedFixtureIdx]
 	selected := m.fieldOptions[m.fieldOptionIdx]
-	
+
 	switch m.editModalField {
 	case 0: // Period
 		f.Period = models.FixturePeriod(selected)
@@ -738,19 +738,19 @@ func (m *Model) applyGoalFieldSelection() {
 	if m.goalModalIdx >= len(m.pendingGoals) || len(m.fieldOptions) == 0 {
 		return
 	}
-	
+
 	goal := &m.pendingGoals[m.goalModalIdx]
 	selected := m.fieldOptions[m.fieldOptionIdx]
 	fixture := m.state.Fixtures[m.selectedFixtureIdx]
 	players := m.fixturePlayers[fixture.FixtureID]
-	
+
 	if m.goalModalField == 0 {
 		// Player selection
 		homeGoals := 0
 		if fixture.HomeScore != nil {
 			homeGoals = *fixture.HomeScore
 		}
-		
+
 		var selectedPlayer *models.Player
 		if m.goalModalIdx < homeGoals {
 			// Home player
@@ -775,7 +775,7 @@ func (m *Model) applyGoalFieldSelection() {
 				}
 			}
 		}
-		
+
 		if selectedPlayer != nil {
 			goal.PlayerID = selectedPlayer.PlayerID
 			goal.PlayerName = selectedPlayer.PlayerName
@@ -785,7 +785,7 @@ func (m *Model) applyGoalFieldSelection() {
 		// Time selection
 		timeMin, _ := strconv.Atoi(selected)
 		goal.TimeMin = timeMin
-		
+
 		// Auto-assign period based on time
 		if timeMin <= 45 {
 			goal.Period = models.PeriodFirstHalf
@@ -820,7 +820,7 @@ func (m *Model) buildFixturesTable() {
 			}
 			score = fmt.Sprintf("%d-%d", homeScore, awayScore)
 		}
-		
+
 		// Time display
 		clockTime := ""
 		if f.Period == models.PeriodPreMatch {
@@ -831,7 +831,7 @@ func (m *Model) buildFixturesTable() {
 		} else if f.Period == models.PeriodFirstHalf || f.Period == models.PeriodSecondHalf {
 			clockTime = fmt.Sprintf("%d:%02d", f.ClockTimeMin, f.ClockTimeSec)
 		}
-		
+
 		rows = append(rows, table.Row{
 			f.Participants.Home.TeamNameShort,
 			score,
@@ -946,9 +946,9 @@ func (m Model) viewPrefixScreen() string {
 	content += "Enter branch prefix (e.g., SE7-2701)\n"
 	content += "Leave blank for dev environment\n\n"
 	content += highlightStyle.Render("⚠ Case sensitive!") + " Match AWS table names exactly\n\n"
-	
+
 	content += "Prefix: " + inputStyle.Render(m.input) + "\n\n"
-	
+
 	if m.input == "" {
 		content += normalStyle.Render("Will use: https://dev.api.playtheseven.com\n")
 		content += normalStyle.Render("Tables: int-dev-GameWeek, int-dev-GameWeekFixtures\n\n")
@@ -956,7 +956,7 @@ func (m Model) viewPrefixScreen() string {
 		content += normalStyle.Render(fmt.Sprintf("Will use: https://%s.dev.api.playtheseven.com\n", m.input))
 		content += normalStyle.Render(fmt.Sprintf("Tables: %s-GameWeek, %s-GameWeekFixtures\n\n", m.input, m.input))
 	}
-	
+
 	content += normalStyle.Render("enter: continue • q: quit")
 
 	return boxStyle.Width(70).Render(content)
@@ -971,7 +971,7 @@ func (m Model) viewGameweekScreen() string {
 	}
 
 	content := titleStyle.Render("Select GameWeek") + "\n\n"
-	
+
 	now := time.Now()
 	content += fmt.Sprintf("Today: %s\n\n", now.Format("Monday, 2 Jan 2006"))
 
@@ -1015,25 +1015,25 @@ func (m Model) viewFixtureScreen() string {
 
 func (m Model) viewPlayersPanel() string {
 	borderColor := lipgloss.Color("63")
-	
+
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(1, 2).
 		Width(m.width - 4).
 		Height((m.height / 2) - 4)
-	
+
 	// Get players for selected fixture
 	if m.selectedFixtureIdx >= len(m.state.Fixtures) {
 		return style.Render("No fixture selected")
 	}
-	
+
 	fixture := m.state.Fixtures[m.selectedFixtureIdx]
 	players, ok := m.fixturePlayers[fixture.FixtureID]
 	if !ok {
 		return style.Render("Loading players...")
 	}
-	
+
 	// Build home and away columns
 	homeContent := titleStyle.Render(fixture.Participants.Home.TeamNameShort) + "\n\n"
 	for i, p := range players.HomePlayers {
@@ -1042,7 +1042,7 @@ func (m Model) viewPlayersPanel() string {
 		}
 		homeContent += fmt.Sprintf("#%-2d %-20s\n", p.ShirtNumber, p.PlayerName)
 	}
-	
+
 	awayContent := titleStyle.Render(fixture.Participants.Away.TeamNameShort) + "\n\n"
 	for i, p := range players.AwayPlayers {
 		if i >= 11 {
@@ -1050,15 +1050,15 @@ func (m Model) viewPlayersPanel() string {
 		}
 		awayContent += fmt.Sprintf("#%-2d %-20s\n", p.ShirtNumber, p.PlayerName)
 	}
-	
+
 	// Create two columns
 	homeStyle := lipgloss.NewStyle().Width((m.width - 8) / 2)
 	awayStyle := lipgloss.NewStyle().Width((m.width - 8) / 2)
-	
-	columns := lipgloss.JoinHorizontal(lipgloss.Top, 
-		homeStyle.Render(homeContent), 
+
+	columns := lipgloss.JoinHorizontal(lipgloss.Top,
+		homeStyle.Render(homeContent),
 		awayStyle.Render(awayContent))
-	
+
 	return style.Render(columns)
 }
 
@@ -1089,8 +1089,8 @@ func (m Model) viewTeamPanel() string {
 		// Display in a row format
 		for i, p := range players {
 			if p != nil {
-				content += fmt.Sprintf("%-3d %-15s %-12s %-15s  ", 
-					i+1, 
+				content += fmt.Sprintf("%-3d %-15s %-12s %-15s  ",
+					i+1,
 					fmt.Sprintf("%s %s", p.FirstName, p.LastName),
 					p.Position,
 					p.TeamName)
@@ -1115,7 +1115,7 @@ func (m Model) viewGameweekPanel() string {
 		Height((m.height / 2) - 2)
 
 	gw := m.state.CurrentGameWeek
-	
+
 	// Show prefix
 	prefixDisplay := "dev"
 	if m.prefix != "" && m.prefix != "dev" {
@@ -1123,17 +1123,17 @@ func (m Model) viewGameweekPanel() string {
 	}
 	content := normalStyle.Render(fmt.Sprintf("Prefix: %s\n", prefixDisplay))
 	content += titleStyle.Render(fmt.Sprintf("GameWeek %s", gw.GameWeekID))
-	
+
 	// Check if this is the current gameweek
 	now := time.Now()
 	startDate, _ := time.Parse(time.RFC3339, gw.CustomerStartDate)
 	endDate, _ := time.Parse(time.RFC3339, gw.CustomerEndDate)
 	isCurrent := now.After(startDate) && now.Before(endDate)
-	
+
 	if isCurrent {
 		content += " " + highlightStyle.Render("(CURRENT)")
 	}
-	
+
 	content += "\n\n"
 	content += fmt.Sprintf("Label: %s\n\n", gw.Label)
 	content += fmt.Sprintf("Start: %s\n", gw.CustomerStartDate[:10])
@@ -1157,11 +1157,11 @@ func (m Model) viewGameweekPanel() string {
 func (m Model) viewFixturesPanel() string {
 	borderColor := lipgloss.Color("63")
 	borderStyle := lipgloss.RoundedBorder()
-	
+
 	if m.focusedPane == focusFixtures {
 		borderColor = lipgloss.Color("170")
 	}
-	
+
 	if m.fixtureSelectMode {
 		borderStyle = lipgloss.ThickBorder()
 		borderColor = lipgloss.Color("205")
@@ -1179,14 +1179,14 @@ func (m Model) viewFixturesPanel() string {
 		content += " " + highlightStyle.Render("(SELECT MODE)")
 	}
 	content += "\n\n"
-	
+
 	if m.err != nil {
 		content += lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("Error: %v\n", m.err))
 	} else if len(m.state.Fixtures) == 0 {
 		content += "Loading fixtures..."
 	} else {
 		content += m.fixturesTable.View() + "\n"
-		
+
 		if m.fixtureSelectMode {
 			content += "\n" + normalStyle.Render("↑↓: navigate • enter: edit • esc: exit")
 		} else if m.focusedPane == focusFixtures {
@@ -1201,27 +1201,27 @@ func (m Model) viewEditModal() string {
 	if m.selectedFixtureIdx >= len(m.state.Fixtures) {
 		return ""
 	}
-	
+
 	f := &m.state.Fixtures[m.selectedFixtureIdx]
-	
+
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("205")).
 		Padding(1, 2).
 		Width(50)
-	
+
 	content := titleStyle.Render("Edit Fixture") + "\n\n"
-	content += fmt.Sprintf("%s vs %s\n\n", 
+	content += fmt.Sprintf("%s vs %s\n\n",
 		f.Participants.Home.TeamNameShort,
 		f.Participants.Away.TeamNameShort)
-	
+
 	// Period selection
 	periodLabel := "Period: "
 	if m.editModalField == 0 {
 		periodLabel = highlightStyle.Render("> Period: ")
 	}
 	content += periodLabel + string(f.Period) + "\n"
-	
+
 	// Scores
 	homeScoreLabel := "Home Score: "
 	if m.editModalField == 1 {
@@ -1232,7 +1232,7 @@ func (m Model) viewEditModal() string {
 		homeScore = fmt.Sprintf("%d", *f.HomeScore)
 	}
 	content += homeScoreLabel + homeScore + "\n"
-	
+
 	awayScoreLabel := "Away Score: "
 	if m.editModalField == 2 {
 		awayScoreLabel = highlightStyle.Render("> Away Score: ")
@@ -1242,7 +1242,7 @@ func (m Model) viewEditModal() string {
 		awayScore = fmt.Sprintf("%d", *f.AwayScore)
 	}
 	content += awayScoreLabel + awayScore + "\n"
-	
+
 	// Clock time (only for live matches)
 	if f.Period == models.PeriodFirstHalf || f.Period == models.PeriodSecondHalf {
 		clockMinLabel := "Clock Min: "
@@ -1250,14 +1250,14 @@ func (m Model) viewEditModal() string {
 			clockMinLabel = highlightStyle.Render("> Clock Min: ")
 		}
 		content += clockMinLabel + fmt.Sprintf("%d\n", f.ClockTimeMin)
-		
+
 		clockSecLabel := "Clock Sec: "
 		if m.editModalField == 4 {
 			clockSecLabel = highlightStyle.Render("> Clock Sec: ")
 		}
 		content += clockSecLabel + fmt.Sprintf("%d\n", f.ClockTimeSec)
 	}
-	
+
 	// Show dropdown if field select is active
 	if m.showFieldSelect {
 		content += "\n" + titleStyle.Render("Select value:") + "\n"
@@ -1272,7 +1272,7 @@ func (m Model) viewEditModal() string {
 	} else {
 		content += "\n" + normalStyle.Render("↑↓: navigate • enter: select • +/-: scores • s: save • esc: cancel")
 	}
-	
+
 	return modalStyle.Render(content)
 }
 
@@ -1282,12 +1282,12 @@ func (m Model) viewBatchModal() string {
 		BorderForeground(lipgloss.Color("205")).
 		Padding(1, 2).
 		Width(60)
-	
+
 	content := titleStyle.Render("Batch Update Fixtures") + "\n\n"
 	content += fmt.Sprintf("GameWeek: %s\n", m.state.CurrentGameWeek.GameWeekID)
 	content += fmt.Sprintf("Fixtures: %d\n\n", len(m.state.Fixtures))
 	content += "Select preset:\n\n"
-	
+
 	presets := []struct {
 		name string
 		desc string
@@ -1297,7 +1297,7 @@ func (m Model) viewBatchModal() string {
 		{"Second Half", "SECOND_HALF, clockTime:45"},
 		{"Full Time", "FULL_TIME, clockTime:90"},
 	}
-	
+
 	for i, preset := range presets {
 		if i == m.batchPresetIdx {
 			content += highlightStyle.Render("> "+preset.name) + "\n"
@@ -1307,9 +1307,9 @@ func (m Model) viewBatchModal() string {
 			content += normalStyle.Render("  "+preset.desc) + "\n"
 		}
 	}
-	
+
 	content += "\n" + normalStyle.Render("↑↓: select • enter: apply • esc: cancel")
-	
+
 	return modalStyle.Render(content)
 }
 
@@ -1319,20 +1319,20 @@ func (m Model) viewGoalModal() string {
 		BorderForeground(lipgloss.Color("205")).
 		Padding(1, 2).
 		Width(70)
-	
+
 	fixture := m.state.Fixtures[m.selectedFixtureIdx]
-	
+
 	content := titleStyle.Render("Assign Goal Scorers") + "\n\n"
-	content += fmt.Sprintf("%s vs %s\n\n", 
-		fixture.Participants.Home.TeamNameShort, 
+	content += fmt.Sprintf("%s vs %s\n\n",
+		fixture.Participants.Home.TeamNameShort,
 		fixture.Participants.Away.TeamNameShort)
-	
+
 	homeGoals := 0
 	if fixture.HomeScore != nil {
 		homeGoals = *fixture.HomeScore
 	}
 	_ = homeGoals // Used for determining team assignment
-	
+
 	// Display goals
 	for i, goal := range m.pendingGoals {
 		isHome := i < homeGoals
@@ -1340,22 +1340,22 @@ func (m Model) viewGoalModal() string {
 		if isHome {
 			teamName = fixture.Participants.Home.TeamNameShort
 		}
-		
+
 		prefix := "  "
 		if i == m.goalModalIdx {
 			prefix = "> "
 		}
-		
+
 		playerName := goal.PlayerName
 		if playerName == "" {
 			playerName = "[Select Player]"
 		}
-		
+
 		timeStr := fmt.Sprintf("%d'", goal.TimeMin)
 		if goal.TimeMin == 0 {
 			timeStr = "[Select Time]"
 		}
-		
+
 		// Highlight current field
 		if i == m.goalModalIdx {
 			if m.goalModalField == 0 {
@@ -1364,10 +1364,10 @@ func (m Model) viewGoalModal() string {
 				timeStr = highlightStyle.Render(timeStr)
 			}
 		}
-		
+
 		content += fmt.Sprintf("%s%s: %s - %s\n", prefix, teamName, playerName, timeStr)
 	}
-	
+
 	// Show dropdown if field select is active
 	if m.showFieldSelect {
 		content += "\n" + titleStyle.Render("Select:") + "\n"
@@ -1386,7 +1386,7 @@ func (m Model) viewGoalModal() string {
 	} else {
 		content += "\n" + helpStyle.Render("↑↓: navigate goals • tab: switch field • enter: select • s: save • esc: cancel")
 	}
-	
+
 	return modalStyle.Render(content)
 }
 
@@ -1609,9 +1609,9 @@ func fetchSelectionCmd(client *aws.APIClient) tea.Cmd {
 func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 	return func() tea.Msg {
 		logger.Println("Creating default team...")
-		
+
 		ctx := context.Background()
-		
+
 		// Fetch available players
 		logger.Println("Fetching available players...")
 		data, err := client.GetGameWeekPlayers(ctx)
@@ -1644,7 +1644,7 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 		usedTeams := make(map[string]bool)
 		var forwards []models.Player
 		var others []models.Player
-		
+
 		// Get 3 forwards first
 		logger.Println("Selecting 3 forwards...")
 		for _, p := range players {
@@ -1654,17 +1654,17 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 				logger.Printf("  Selected forward: %s %s (%s)", p.FirstName, p.LastName, p.TeamName)
 			}
 		}
-		
+
 		if len(forwards) < 3 {
 			logger.Printf("ERROR: Not enough forwards (found %d)", len(forwards))
 			return teamCreatedMsg{err: fmt.Errorf("not enough forwards available (found %d)", len(forwards))}
 		}
-		
+
 		// Get 4 mids/defenders
 		logger.Println("Selecting 4 mids/defenders...")
 		for _, p := range players {
-			if (p.Position == models.PositionMidfielder || p.Position == models.PositionDefender) && 
-			   !usedTeams[p.TeamID] && len(others) < 4 {
+			if (p.Position == models.PositionMidfielder || p.Position == models.PositionDefender) &&
+				!usedTeams[p.TeamID] && len(others) < 4 {
 				others = append(others, p)
 				usedTeams[p.TeamID] = true
 				logger.Printf("  Selected %s: %s %s (%s)", p.Position, p.FirstName, p.LastName, p.TeamName)
@@ -1675,7 +1675,7 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 			logger.Printf("ERROR: Not enough mids/defenders (found %d)", len(others))
 			return teamCreatedMsg{err: fmt.Errorf("not enough mids/defenders available (found %d)", len(others))}
 		}
-		
+
 		// Combine: 3 forwards + 4 others = 7 players
 		selected := append(forwards, others...)
 		logger.Printf("Total selected: %d players (3F + 4M/D)", len(selected))
@@ -1723,19 +1723,19 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 func makeGameWeekCurrentCmd(gw *models.GameWeek, prefix string, dynamoClient *aws.DynamoDBClient) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		
+
 		// Set dates to make this gameweek current
 		now := time.Now()
 		gw.CustomerStartDate = now.Add(-24 * time.Hour).Format(time.RFC3339)
 		gw.CustomerEndDate = now.Add(6 * 24 * time.Hour).Format(time.RFC3339)
 		gw.FixturesStartDate = now.Add(-12 * time.Hour).Format(time.RFC3339)
 		gw.FixturesEndDate = now.Add(5 * 24 * time.Hour).Format(time.RFC3339)
-		
+
 		// Update in DynamoDB using the passed client (already configured for GameWeeks table)
 		if err := dynamoClient.UpdateGameWeek(ctx, gw); err != nil {
 			return gameWeekUpdatedMsg{err: err}
 		}
-		
+
 		return gameWeekUpdatedMsg{gameWeek: gw}
 	}
 }
@@ -1743,40 +1743,40 @@ func makeGameWeekCurrentCmd(gw *models.GameWeek, prefix string, dynamoClient *aw
 func updateFixtureCmd(fixture *models.Fixture, prefix string) tea.Cmd {
 	return func() tea.Msg {
 		logger.Printf("Updating fixture: %s", fixture.FixtureID)
-		
+
 		// Validate before saving
 		if err := fixture.Validate(); err != nil {
 			logger.Printf("ERROR: Validation failed: %v", err)
 			return fixtureUpdatedMsg{err: fmt.Errorf("validation failed: %w", err)}
 		}
-		
+
 		ctx := context.Background()
-		
+
 		// Create DynamoDB client for Fixtures table
 		tableName := prefix + "-GameWeekFixtures"
 		if prefix == "dev" || prefix == "" {
 			tableName = "int-dev-GameWeekFixtures"
 		}
-		
+
 		logger.Printf("Using table: %s", tableName)
 		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", tableName)
 		if err != nil {
 			logger.Printf("ERROR: Failed to create dynamo client: %v", err)
 			return fixtureUpdatedMsg{err: fmt.Errorf("failed to create dynamo client: %w", err)}
 		}
-		
+
 		// Ensure FixtureStatus is set
 		if fixture.FixtureStatus == "" {
 			fixture.FixtureStatus = "FIXTURE"
 		}
-		
+
 		// Update startDate if going live (not PRE_MATCH)
 		if fixture.Period != models.PeriodPreMatch {
 			// Set startDate to 5 minutes ago to enable websocket
 			now := time.Now().UTC()
 			fixture.StartDate = now.Add(-5 * time.Minute).Format(time.RFC3339)
 		}
-		
+
 		// Ensure metadata exists with default periods
 		if fixture.Metadata == nil {
 			fixture.Metadata = map[string]interface{}{
@@ -1790,16 +1790,16 @@ func updateFixtureCmd(fixture *models.Fixture, prefix string) tea.Cmd {
 				},
 			}
 		}
-		
-		logger.Printf("Fixture data: Period=%s, HomeScore=%v, AwayScore=%v, Clock=%d:%d", 
+
+		logger.Printf("Fixture data: Period=%s, HomeScore=%v, AwayScore=%v, Clock=%d:%d",
 			fixture.Period, fixture.HomeScore, fixture.AwayScore, fixture.ClockTimeMin, fixture.ClockTimeSec)
-		
+
 		// Update in DynamoDB
 		if err := dynamoClient.UpdateFixture(ctx, fixture); err != nil {
 			logger.Printf("ERROR: Failed to update fixture in DynamoDB: %v", err)
 			return fixtureUpdatedMsg{err: err}
 		}
-		
+
 		logger.Printf("Successfully updated fixture: %s", fixture.FixtureID)
 		return fixtureUpdatedMsg{fixture: fixture}
 	}
@@ -1808,27 +1808,27 @@ func updateFixtureCmd(fixture *models.Fixture, prefix string) tea.Cmd {
 func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix string) tea.Cmd {
 	return func() tea.Msg {
 		logger.Printf("Batch update started: preset=%s, prefix=%s, fixtures=%d", preset, prefix, len(fixtures))
-		
+
 		ctx := context.Background()
-		
+
 		tableName := prefix + "-GameWeekFixtures"
 		if prefix == "dev" || prefix == "" {
 			tableName = "int-dev-GameWeekFixtures"
 		}
-		
+
 		logger.Printf("Creating DynamoDB client for table: %s", tableName)
 		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", tableName)
 		if err != nil {
 			logger.Printf("ERROR: Failed to create dynamo client: %v", err)
 			return batchUpdatedMsg{err: fmt.Errorf("failed to create dynamo client: %w", err)}
 		}
-		
+
 		now := time.Now().UTC()
-		
+
 		for i := range fixtures {
 			f := &fixtures[i]
 			logger.Printf("Updating fixture %d/%d: %s", i+1, len(fixtures), f.FixtureID)
-			
+
 			switch preset {
 			case "kickoff":
 				f.Period = models.PeriodFirstHalf
@@ -1849,15 +1849,15 @@ func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix str
 				f.ClockTimeMin = 90
 				f.ClockTimeSec = 0
 			}
-			
+
 			logger.Printf("  Period: %s, Clock: %d:%d", f.Period, f.ClockTimeMin, f.ClockTimeSec)
-			
+
 			// Validate before saving
 			if err := f.Validate(); err != nil {
 				logger.Printf("ERROR: Validation failed for fixture %s: %v", f.FixtureID, err)
 				return batchUpdatedMsg{err: fmt.Errorf("validation failed for %s: %w", f.FixtureID, err)}
 			}
-			
+
 			// Ensure metadata
 			if f.Metadata == nil {
 				f.Metadata = map[string]interface{}{
@@ -1867,14 +1867,14 @@ func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix str
 					},
 				}
 			}
-			
+
 			if err := dynamoClient.UpdateFixture(ctx, f); err != nil {
 				logger.Printf("ERROR: Failed to update fixture %s: %v", f.FixtureID, err)
 				return batchUpdatedMsg{err: fmt.Errorf("failed to update fixture %s: %w", f.FixtureID, err)}
 			}
 			logger.Printf("  Successfully updated fixture %s", f.FixtureID)
 		}
-		
+
 		logger.Printf("Batch update completed successfully: %d fixtures", len(fixtures))
 		return batchUpdatedMsg{count: len(fixtures)}
 	}
@@ -1921,16 +1921,16 @@ func getInt(m map[string]interface{}, key string) int {
 func fetchPlayersCmd(apiClient *aws.APIClient, gameWeekID string, fixtures []models.Fixture) tea.Cmd {
 	return func() tea.Msg {
 		logger.Printf("Fetching players for gameweek: %s via API", gameWeekID)
-		
+
 		ctx := context.Background()
-		
+
 		// Call API to get players
 		data, err := apiClient.GetGameWeekPlayers(ctx)
 		if err != nil {
 			logger.Printf("ERROR: Failed to fetch players from API: %v", err)
 			return playersLoadedMsg{err: err}
 		}
-		
+
 		// Parse players from response
 		var players []models.Player
 		if playerList, ok := data["players"].([]interface{}); ok {
@@ -1955,7 +1955,7 @@ func fetchPlayersCmd(apiClient *aws.APIClient, gameWeekID string, fixtures []mod
 			logger.Println("ERROR: Invalid players data structure from API")
 			return playersLoadedMsg{err: fmt.Errorf("invalid players data structure")}
 		}
-		
+
 		logger.Printf("Parsed %d players from API", len(players))
 		return playersLoadedMsg{players: players}
 	}
@@ -1964,14 +1964,14 @@ func fetchPlayersCmd(apiClient *aws.APIClient, gameWeekID string, fixtures []mod
 func triggerGitHubActionCmd(prefix string) tea.Cmd {
 	return func() tea.Msg {
 		logger.Printf("Triggering GitHub Action for prefix: %s", prefix)
-		
+
 		// Get GitHub token from environment
 		token := os.Getenv("GITHUB_TOKEN")
 		if token == "" {
 			logger.Println("ERROR: GITHUB_TOKEN not set")
 			return githubActionMsg{err: fmt.Errorf("GITHUB_TOKEN environment variable not set")}
 		}
-		
+
 		// Prepare workflow dispatch payload
 		payload := map[string]interface{}{
 			"ref": "develop",
@@ -1979,23 +1979,23 @@ func triggerGitHubActionCmd(prefix string) tea.Cmd {
 				"prefix": prefix,
 			},
 		}
-		
+
 		payloadBytes, _ := json.Marshal(payload)
-		
+
 		// GitHub API endpoint for workflow dispatch
 		url := "https://api.github.com/repos/angstromsports/aws-node-lambdas/actions/workflows/clone-environment-data.yml/dispatches"
-		
+
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
 		if err != nil {
 			logger.Printf("ERROR: Failed to create request: %v", err)
 			return githubActionMsg{err: err}
 		}
-		
+
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		client := &http.Client{Timeout: 10 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -2003,13 +2003,13 @@ func triggerGitHubActionCmd(prefix string) tea.Cmd {
 			return githubActionMsg{err: err}
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != 204 {
 			body, _ := io.ReadAll(resp.Body)
 			logger.Printf("ERROR: GitHub API returned status %d: %s", resp.StatusCode, string(body))
 			return githubActionMsg{err: fmt.Errorf("GitHub API error (status %d)", resp.StatusCode)}
 		}
-		
+
 		logger.Printf("Successfully triggered environment reset for prefix: %s", prefix)
 		return githubActionMsg{success: true}
 	}

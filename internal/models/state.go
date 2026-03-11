@@ -1,17 +1,17 @@
 package models
 
 type AppState struct {
-	GameWeeks        []GameWeek
-	CurrentGameWeek  *GameWeek
-	Fixtures         []Fixture
-	SelectedFixture  *Fixture
-	Selection        *Selection
-	IsAuthenticated  bool
-	Username         string
-	ErrorMessage     string
-	SuccessMessage   string
-	IsLoading        bool
-	LoadingMessage   string
+	GameWeeks       []GameWeek
+	CurrentGameWeek *GameWeek
+	Fixtures        []Fixture
+	SelectedFixture *Fixture
+	Selection       *Selection
+	IsAuthenticated bool
+	Username        string
+	ErrorMessage    string
+	SuccessMessage  string
+	IsLoading       bool
+	LoadingMessage  string
 }
 
 func NewAppState() *AppState {

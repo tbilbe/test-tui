@@ -108,7 +108,7 @@ func (a *APIClient) PutSelections(ctx context.Context, selections map[string]int
 
 func (a *APIClient) put(ctx context.Context, path string, body interface{}) error {
 	url := a.baseURL + path
-	
+
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request body: %w", err)
