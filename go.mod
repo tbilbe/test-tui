@@ -1,6 +1,6 @@
 module github.com/angstromsports/seven-test-tui
 
-go 1.25.0
+go 1.23
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
