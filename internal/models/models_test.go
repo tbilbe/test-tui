@@ -230,16 +230,16 @@ func TestFixture_ApplyPreset(t *testing.T) {
 	pastStart := "2026-03-12T15:20:00Z"
 
 	tests := []struct {
-		name           string
-		preset         string
-		wantPeriod     FixturePeriod
-		wantStatus     string
-		wantClockMin   int
-		wantClockSec   int
-		wantHomeScore  *int
-		wantAwayScore  *int
-		wantGoalsNil   bool
-		wantStartDate  string
+		name          string
+		preset        string
+		wantPeriod    FixturePeriod
+		wantStatus    string
+		wantClockMin  int
+		wantClockSec  int
+		wantHomeScore *int
+		wantAwayScore *int
+		wantGoalsNil  bool
+		wantStartDate string
 	}{
 		{
 			name:          "prematch resets all fields",
