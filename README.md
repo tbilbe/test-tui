@@ -4,33 +4,39 @@ A terminal user interface (TUI) application for testing and QA on the Seven mobi
 
 ## 📥 Download & Install
 
-### Option 1: Download Pre-built Binary (Recommended)
+### Option 1: One-Line Install (macOS/Linux)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/tbilbe/test-tui/main/install.sh | bash
+```
+
+This downloads the latest release, removes macOS quarantine, and installs to `~/.local/bin`.
+
+### Option 2: Manual Download
 
 1. Go to the [Releases page](../../releases)
-2. Download the binary for your platform:
-   - **macOS (Apple Silicon)**: `seven-test-tui-darwin-arm64`
-   - **macOS (Intel)**: `seven-test-tui-darwin-amd64`
-   - **Linux**: `seven-test-tui-linux-amd64`
-   - **Windows**: `seven-test-tui-windows-amd64.exe`
+2. Download the `.tar.gz` for your platform:
+   - **macOS**: `seven-test-tui_X.X.X_darwin_universal.tar.gz`
+   - **Linux**: `seven-test-tui_X.X.X_linux_x86_64.tar.gz`
+   - **Windows**: `seven-test-tui_X.X.X_windows_x86_64.zip`
 
-3. Make it executable (macOS/Linux):
+3. Extract (double-click on macOS, or `tar -xzf <file>`)
+
+4. Open Terminal in the extracted folder and run:
    ```bash
-   chmod +x seven-test-tui-darwin-arm64
+   # macOS only - remove Apple quarantine
+   xattr -d com.apple.quarantine seven-test-tui
+   
+   # Run it
+   ./seven-test-tui
    ```
 
-4. Run it:
-   ```bash
-   ./seven-test-tui-darwin-arm64
-   ```
-
-> **Tip**: Rename the binary to `seven-test-tui` and move it to a directory in your PATH (e.g., `/usr/local/bin/`) for easier access.
-
-### Option 2: Build from Source
+### Option 3: Build from Source
 
 Requires Go 1.23+:
 ```bash
-git clone https://github.com/angstromsports/seven-test-tui.git
-cd seven-test-tui
+git clone https://github.com/tbilbe/test-tui.git
+cd test-tui
 go build -o seven-test-tui ./cmd/main.go
 ./seven-test-tui
 ```
@@ -207,7 +213,7 @@ go fmt ./...
 
 ## 🤝 Contributing
 
-This project is vibe coded! Feel free to contribute improvements.
+This project is vibe coded! Feel free to contribute improvements via Pull Requests.
 
 ## 📚 Additional Documentation
 

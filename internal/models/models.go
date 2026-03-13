@@ -174,3 +174,78 @@ func (f *Fixture) Validate() error {
 	}
 	return nil
 }
+
+// ApplyPreset applies a batch preset to a fixture, modifying it in place.
+// futureStart should be RFC3339 formatted time for prematch preset.
+// pastStart should be RFC3339 formatted time for kickoff preset.
+func (f *Fixture) ApplyPreset(preset string, futureStart, pastStart string) {
+	switch preset {
+	case "prematch":
+		f.Period = PeriodPreMatch
+		f.FixtureStatus = ""
+		f.ClockTimeMin = 0
+		f.ClockTimeSec = 0
+		f.HomeScore = nil
+		f.AwayScore = nil
+		f.Goals = nil
+		f.StartDate = futureStart
+	case "kickoff":
+		f.Period = PeriodFirstHalf
+		f.FixtureStatus = "IN_PLAY"
+		f.ClockTimeMin = 0
+		f.ClockTimeSec = 0
+		f.StartDate = pastStart
+	case "halftime":
+		f.Period = PeriodHalfTime
+		f.ClockTimeMin = 45
+		f.ClockTimeSec = 0
+	case "secondhalf":
+		f.Period = PeriodSecondHalf
+		f.ClockTimeMin = 45
+		f.ClockTimeSec = 0
+	case "fulltime":
+		f.Period = PeriodFullTime
+		f.ClockTimeMin = 90
+		f.ClockTimeSec = 0
+	}
+}
+
+// ApplyPreMatchReset resets a GameWeek's fixturesStartDate for pre-match state.
+func (g *GameWeek) ApplyPreMatchReset(futureStart string) {
+	g.FixturesStartDate = futureStart
+}
+
+// ApplyKickoffReset sets GameWeek's fixturesStartDate for when fixtures go live.
+func (g *GameWeek) ApplyKickoffReset(pastStart string) {
+	g.FixturesStartDate = pastStart
+}
+
+// ShouldUpdateStartDate returns true if the gameweek's fixturesStartDate is in the future
+// relative to checkTime, meaning it needs to be updated when a fixture goes live.
+func (g *GameWeek) ShouldUpdateStartDate(checkTime string) bool {
+	gwStart, err1 := time.Parse(time.RFC3339, g.FixturesStartDate)
+	check, err2 := time.Parse(time.RFC3339, checkTime)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return gwStart.After(check)
+}
+
+// IsLivePreset returns true if the preset puts fixtures into a live/in-play state.
+func IsLivePreset(preset string) bool {
+	switch preset {
+	case "kickoff", "halftime", "secondhalf", "fulltime":
+		return true
+	}
+	return false
+}
+
+// AllFixturesPreMatch returns true if all fixtures are in PRE_MATCH state.
+func AllFixturesPreMatch(fixtures []Fixture) bool {
+	for _, f := range fixtures {
+		if f.Period != PeriodPreMatch {
+			return false
+		}
+	}
+	return true
+}

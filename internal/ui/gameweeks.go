@@ -56,6 +56,18 @@ var (
 
 	inputStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("86"))
+
+	logoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
+			Bold(true)
+
+	logo = `███████╗███████╗██╗   ██╗███████╗███╗   ██╗
+██╔════╝██╔════╝██║   ██║██╔════╝████╗  ██║
+███████╗█████╗  ██║   ██║█████╗  ██╔██╗ ██║
+╚════██║██╔══╝  ╚██╗ ██╔╝██╔══╝  ██║╚██╗██║
+███████║███████╗ ╚████╔╝ ███████╗██║ ╚████║
+╚══════╝╚══════╝  ╚═══╝  ╚══════╝╚═╝  ╚═══╝
+         T E S T   T U I`
 )
 
 type screenType int
@@ -408,8 +420,8 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Batch modal submit
 			if m.showBatchModal {
 				m.showBatchModal = false
-				presets := []string{"kickoff", "halftime", "secondhalf", "fulltime"}
-				return m, batchUpdateFixturesCmd(m.state.Fixtures, presets[m.batchPresetIdx], m.prefix)
+				presets := []string{"prematch", "kickoff", "halftime", "secondhalf", "fulltime"}
+				return m, batchUpdateFixturesCmd(m.state.Fixtures, presets[m.batchPresetIdx], m.prefix, m.state.CurrentGameWeek)
 			}
 			// Field select in edit modal
 			if m.editingFixture && !m.showFieldSelect {
@@ -460,7 +472,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showGoalModal = false
 				m.fixtureSelectMode = false
 				m.pendingGoals = nil
-				return m, updateFixtureCmd(fixture, m.prefix)
+				return m, updateFixtureCmd(fixture, m.prefix, m.state.CurrentGameWeek, m.state.Fixtures)
 			}
 			// Save fixture changes
 			if m.editingFixture && m.selectedFixtureIdx < len(m.state.Fixtures) {
@@ -508,7 +520,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// No goal changes, save directly
 				m.editingFixture = false
 				m.fixtureSelectMode = false
-				return m, updateFixtureCmd(&fixture, m.prefix)
+				return m, updateFixtureCmd(&fixture, m.prefix, m.state.CurrentGameWeek, m.state.Fixtures)
 			}
 			return m, nil
 		case "esc":
@@ -560,7 +572,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if m.showFieldSelect && m.fieldOptionIdx < len(m.fieldOptions)-1 {
 				m.fieldOptionIdx++
-			} else if m.showBatchModal && m.batchPresetIdx < 3 {
+			} else if m.showBatchModal && m.batchPresetIdx < 4 {
 				m.batchPresetIdx++
 			} else if m.editingFixture {
 				// Navigate modal fields
@@ -942,6 +954,9 @@ func (m Model) View() string {
 }
 
 func (m Model) viewPrefixScreen() string {
+	// Logo at top
+	header := logoStyle.Render(logo) + "\n\n"
+
 	content := titleStyle.Render("Environment Setup") + "\n\n"
 	content += "Enter branch prefix (e.g., SE7-2701)\n"
 	content += "Leave blank for dev environment\n\n"
@@ -959,15 +974,21 @@ func (m Model) viewPrefixScreen() string {
 
 	content += normalStyle.Render("enter: continue • q: quit")
 
-	return boxStyle.Width(70).Render(content)
+	box := boxStyle.Width(70).Render(content)
+
+	return lipgloss.JoinVertical(lipgloss.Center, header, box)
 }
 
 func (m Model) viewGameweekScreen() string {
+	// Logo at top
+	header := logoStyle.Render(logo) + "\n\n"
+
 	if len(m.state.GameWeeks) == 0 {
-		return boxStyle.Width(50).Render(
+		box := boxStyle.Width(50).Render(
 			titleStyle.Render("Loading GameWeeks...") + "\n\n" +
 				"Please wait...",
 		)
+		return lipgloss.JoinVertical(lipgloss.Center, header, box)
 	}
 
 	content := titleStyle.Render("Select GameWeek") + "\n\n"
@@ -994,7 +1015,9 @@ func (m Model) viewGameweekScreen() string {
 	content += "\nEnter GameWeek ID: " + inputStyle.Render(m.input+"_") + "\n\n"
 	content += normalStyle.Render("Type number • enter: select • q: quit")
 
-	return boxStyle.Width(60).Render(content)
+	box := boxStyle.Width(60).Render(content)
+
+	return lipgloss.JoinVertical(lipgloss.Center, header, box)
 }
 
 func (m Model) viewFixtureScreen() string {
@@ -1292,6 +1315,7 @@ func (m Model) viewBatchModal() string {
 		name string
 		desc string
 	}{
+		{"Pre-Match", "PRE_MATCH, clockTime:0, startDate:+10min"},
 		{"Kickoff", "FIRST_HALF, clockTime:0, startDate:-5min"},
 		{"Half Time", "HALF_TIME, clockTime:45"},
 		{"Second Half", "SECOND_HALF, clockTime:45"},
@@ -1740,7 +1764,7 @@ func makeGameWeekCurrentCmd(gw *models.GameWeek, prefix string, dynamoClient *aw
 	}
 }
 
-func updateFixtureCmd(fixture *models.Fixture, prefix string) tea.Cmd {
+func updateFixtureCmd(fixture *models.Fixture, prefix string, gameWeek *models.GameWeek, allFixtures []models.Fixture) tea.Cmd {
 	return func() tea.Msg {
 		logger.Printf("Updating fixture: %s", fixture.FixtureID)
 
@@ -1770,23 +1794,21 @@ func updateFixtureCmd(fixture *models.Fixture, prefix string) tea.Cmd {
 			fixture.FixtureStatus = "FIXTURE"
 		}
 
+		now := time.Now().UTC()
+		pastStart := now.Add(-5 * time.Minute).Format(time.RFC3339)
+		futureStart := now.Add(10 * time.Minute).Format(time.RFC3339)
+
 		// Update startDate if going live (not PRE_MATCH)
 		if fixture.Period != models.PeriodPreMatch {
-			// Set startDate to 5 minutes ago to enable websocket
-			now := time.Now().UTC()
-			fixture.StartDate = now.Add(-5 * time.Minute).Format(time.RFC3339)
+			fixture.StartDate = pastStart
 		}
 
 		// Ensure metadata exists with default periods
 		if fixture.Metadata == nil {
 			fixture.Metadata = map[string]interface{}{
 				"periods": map[string]interface{}{
-					"FIRST_HALF": map[string]interface{}{
-						"expectedLengthMins": 45,
-					},
-					"SECOND_HALF": map[string]interface{}{
-						"expectedLengthMins": 45,
-					},
+					"FIRST_HALF":  map[string]interface{}{"expectedLengthMins": 45},
+					"SECOND_HALF": map[string]interface{}{"expectedLengthMins": 45},
 				},
 			}
 		}
@@ -1801,54 +1823,74 @@ func updateFixtureCmd(fixture *models.Fixture, prefix string) tea.Cmd {
 		}
 
 		logger.Printf("Successfully updated fixture: %s", fixture.FixtureID)
+
+		// Check if GameWeek needs updating
+		if gameWeek != nil {
+			var newStartDate string
+			shouldUpdate := false
+
+			if fixture.Period != models.PeriodPreMatch && gameWeek.ShouldUpdateStartDate(pastStart) {
+				// Going live and gameweek start is in future
+				newStartDate = pastStart
+				shouldUpdate = true
+			} else if fixture.Period == models.PeriodPreMatch && models.AllFixturesPreMatch(allFixtures) {
+				// All fixtures now pre-match, push gameweek start to future
+				newStartDate = futureStart
+				shouldUpdate = true
+			}
+
+			if shouldUpdate {
+				gameWeekTable := prefix + "-GameWeek"
+				if prefix == "dev" || prefix == "" {
+					gameWeekTable = "int-dev-GameWeek"
+				}
+
+				gwClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", gameWeekTable)
+				if err != nil {
+					logger.Printf("ERROR: Failed to create gameweek dynamo client: %v", err)
+					return fixtureUpdatedMsg{err: fmt.Errorf("failed to create gameweek dynamo client: %w", err)}
+				}
+
+				gameWeek.FixturesStartDate = newStartDate
+				if err := gwClient.UpdateGameWeek(ctx, gameWeek); err != nil {
+					logger.Printf("ERROR: Failed to update gameweek: %v", err)
+					return fixtureUpdatedMsg{err: fmt.Errorf("failed to update gameweek: %w", err)}
+				}
+				logger.Printf("Updated GameWeek %s fixturesStartDate to %s", gameWeek.GameWeekID, newStartDate)
+			}
+		}
+
 		return fixtureUpdatedMsg{fixture: fixture}
 	}
 }
 
-func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix string) tea.Cmd {
+func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix string, gameWeek *models.GameWeek) tea.Cmd {
 	return func() tea.Msg {
 		logger.Printf("Batch update started: preset=%s, prefix=%s, fixtures=%d", preset, prefix, len(fixtures))
 
 		ctx := context.Background()
 
-		tableName := prefix + "-GameWeekFixtures"
+		fixturesTable := prefix + "-GameWeekFixtures"
 		if prefix == "dev" || prefix == "" {
-			tableName = "int-dev-GameWeekFixtures"
+			fixturesTable = "int-dev-GameWeekFixtures"
 		}
 
-		logger.Printf("Creating DynamoDB client for table: %s", tableName)
-		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", tableName)
+		logger.Printf("Creating DynamoDB client for table: %s", fixturesTable)
+		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", fixturesTable)
 		if err != nil {
 			logger.Printf("ERROR: Failed to create dynamo client: %v", err)
 			return batchUpdatedMsg{err: fmt.Errorf("failed to create dynamo client: %w", err)}
 		}
 
 		now := time.Now().UTC()
+		futureStart := now.Add(10 * time.Minute).Format(time.RFC3339)
+		pastStart := now.Add(-5 * time.Minute).Format(time.RFC3339)
 
 		for i := range fixtures {
 			f := &fixtures[i]
 			logger.Printf("Updating fixture %d/%d: %s", i+1, len(fixtures), f.FixtureID)
 
-			switch preset {
-			case "kickoff":
-				f.Period = models.PeriodFirstHalf
-				f.FixtureStatus = "IN_PLAY"
-				f.ClockTimeMin = 0
-				f.ClockTimeSec = 0
-				f.StartDate = now.Add(-5 * time.Minute).Format(time.RFC3339)
-			case "halftime":
-				f.Period = models.PeriodHalfTime
-				f.ClockTimeMin = 45
-				f.ClockTimeSec = 0
-			case "secondhalf":
-				f.Period = models.PeriodSecondHalf
-				f.ClockTimeMin = 45
-				f.ClockTimeSec = 0
-			case "fulltime":
-				f.Period = models.PeriodFullTime
-				f.ClockTimeMin = 90
-				f.ClockTimeSec = 0
-			}
+			f.ApplyPreset(preset, futureStart, pastStart)
 
 			logger.Printf("  Period: %s, Clock: %d:%d", f.Period, f.ClockTimeMin, f.ClockTimeSec)
 
@@ -1873,6 +1915,43 @@ func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix str
 				return batchUpdatedMsg{err: fmt.Errorf("failed to update fixture %s: %w", f.FixtureID, err)}
 			}
 			logger.Printf("  Successfully updated fixture %s", f.FixtureID)
+		}
+
+		// Update GameWeek start date based on preset
+		if gameWeek != nil {
+			var newStartDate string
+			shouldUpdate := false
+
+			if preset == "prematch" {
+				// Pre-match: push start date into future
+				newStartDate = futureStart
+				shouldUpdate = true
+			} else if models.IsLivePreset(preset) && gameWeek.ShouldUpdateStartDate(pastStart) {
+				// Live preset and gameweek start is in future: set to now
+				newStartDate = pastStart
+				shouldUpdate = true
+			}
+
+			if shouldUpdate {
+				gameWeekTable := prefix + "-GameWeek"
+				if prefix == "dev" || prefix == "" {
+					gameWeekTable = "int-dev-GameWeek"
+				}
+
+				gwClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", gameWeekTable)
+				if err != nil {
+					logger.Printf("ERROR: Failed to create gameweek dynamo client: %v", err)
+					return batchUpdatedMsg{err: fmt.Errorf("failed to create gameweek dynamo client: %w", err)}
+				}
+
+				gameWeek.FixturesStartDate = newStartDate
+				if err := gwClient.UpdateGameWeek(ctx, gameWeek); err != nil {
+					logger.Printf("ERROR: Failed to update gameweek: %v", err)
+					return batchUpdatedMsg{err: fmt.Errorf("failed to update gameweek: %w", err)}
+				}
+				logger.Printf("Updated GameWeek %s fixturesStartDate to %s", gameWeek.GameWeekID, newStartDate)
+			}
+
 		}
 
 		logger.Printf("Batch update completed successfully: %d fixtures", len(fixtures))
