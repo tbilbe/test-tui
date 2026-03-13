@@ -6,7 +6,6 @@ import (
 )
 
 func TestLoad_AllEnvVarsSet(t *testing.T) {
-	// Set required env vars
 	os.Setenv("API_ENDPOINT", "https://test.api.example.com")
 	os.Setenv("USER_POOL_ID", "eu-west-2_test123")
 	os.Setenv("CLIENT_ID", "test-client-id")
@@ -40,76 +39,38 @@ func TestLoad_AllEnvVarsSet(t *testing.T) {
 	if cfg.AWSRegion != "us-east-1" {
 		t.Errorf("AWSRegion = %q, want %q", cfg.AWSRegion, "us-east-1")
 	}
-	if cfg.FixtureTable != "test-prefix-GameWeekFixtures" {
-		t.Errorf("FixtureTable = %q, want %q", cfg.FixtureTable, "test-prefix-GameWeekFixtures")
-	}
 }
 
 func TestLoad_DefaultValues(t *testing.T) {
-	// Set only required env vars
-	os.Setenv("API_ENDPOINT", "https://test.api.example.com")
-	os.Setenv("USER_POOL_ID", "eu-west-2_test123")
+	// Only CLIENT_ID is required, others have defaults
 	os.Setenv("CLIENT_ID", "test-client-id")
-	// Clear optional vars to test defaults
+	os.Unsetenv("API_ENDPOINT")
+	os.Unsetenv("USER_POOL_ID")
 	os.Unsetenv("PREFIX")
 	os.Unsetenv("AWS_REGION")
-	defer func() {
-		os.Unsetenv("API_ENDPOINT")
-		os.Unsetenv("USER_POOL_ID")
-		os.Unsetenv("CLIENT_ID")
-	}()
+	defer os.Unsetenv("CLIENT_ID")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.Prefix != "int-dev" {
-		t.Errorf("Prefix default = %q, want %q", cfg.Prefix, "int-dev")
+	if cfg.APIEndpoint != "https://dev.api.playtheseven.com" {
+		t.Errorf("APIEndpoint default = %q, want %q", cfg.APIEndpoint, "https://dev.api.playtheseven.com")
+	}
+	if cfg.UserPoolID != "eu-west-2_uqwEOLO5d" {
+		t.Errorf("UserPoolID default = %q, want %q", cfg.UserPoolID, "eu-west-2_uqwEOLO5d")
+	}
+	if cfg.Prefix != "" {
+		t.Errorf("Prefix default = %q, want empty", cfg.Prefix)
 	}
 	if cfg.AWSRegion != "eu-west-2" {
 		t.Errorf("AWSRegion default = %q, want %q", cfg.AWSRegion, "eu-west-2")
 	}
 }
 
-func TestLoad_MissingAPIEndpoint(t *testing.T) {
-	os.Unsetenv("API_ENDPOINT")
-	os.Setenv("USER_POOL_ID", "eu-west-2_test123")
-	os.Setenv("CLIENT_ID", "test-client-id")
-	defer func() {
-		os.Unsetenv("USER_POOL_ID")
-		os.Unsetenv("CLIENT_ID")
-	}()
-
-	_, err := Load()
-	if err == nil {
-		t.Error("Load() should return error when API_ENDPOINT is missing")
-	}
-}
-
-func TestLoad_MissingUserPoolID(t *testing.T) {
-	os.Setenv("API_ENDPOINT", "https://test.api.example.com")
-	os.Unsetenv("USER_POOL_ID")
-	os.Setenv("CLIENT_ID", "test-client-id")
-	defer func() {
-		os.Unsetenv("API_ENDPOINT")
-		os.Unsetenv("CLIENT_ID")
-	}()
-
-	_, err := Load()
-	if err == nil {
-		t.Error("Load() should return error when USER_POOL_ID is missing")
-	}
-}
-
 func TestLoad_MissingClientID(t *testing.T) {
-	os.Setenv("API_ENDPOINT", "https://test.api.example.com")
-	os.Setenv("USER_POOL_ID", "eu-west-2_test123")
 	os.Unsetenv("CLIENT_ID")
-	defer func() {
-		os.Unsetenv("API_ENDPOINT")
-		os.Unsetenv("USER_POOL_ID")
-	}()
 
 	_, err := Load()
 	if err == nil {
