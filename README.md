@@ -16,7 +16,7 @@ This downloads the latest release, removes macOS quarantine, and installs to `~/
 
 1. Go to the [Releases page](../../releases)
 2. Download the `.tar.gz` for your platform:
-   - **macOS**: `seven-test-tui_X.X.X_darwin_universal.tar.gz`
+   - **macOS**: `seven-test-tui_X.X.X_darwin_all.tar.gz`
    - **Linux**: `seven-test-tui_X.X.X_linux_x86_64.tar.gz`
    - **Windows**: `seven-test-tui_X.X.X_windows_x86_64.zip`
 

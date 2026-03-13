@@ -17,9 +17,9 @@ case "$ARCH" in
   *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-# macOS universal binary is just "darwin"
+# macOS universal binary uses "all" suffix
 if [ "$OS" = "darwin" ]; then
-  ARCH="universal"
+  ARCH="all"
 fi
 
 echo "Detecting system: ${OS}_${ARCH}"
