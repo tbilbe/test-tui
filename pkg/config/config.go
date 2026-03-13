@@ -16,25 +16,16 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		APIEndpoint: getEnv("API_ENDPOINT", ""),
-		UserPoolID:  getEnv("USER_POOL_ID", ""),
+		APIEndpoint: getEnv("API_ENDPOINT", "https://dev.api.playtheseven.com"),
+		UserPoolID:  getEnv("USER_POOL_ID", "eu-west-2_uqwEOLO5d"),
 		ClientID:    getEnv("CLIENT_ID", ""),
-		Prefix:      getEnv("PREFIX", "int-dev"),
+		Prefix:      getEnv("PREFIX", ""),
 		AWSRegion:   getEnv("AWS_REGION", "eu-west-2"),
 	}
 
-	// Construct fixture table name from prefix
-	cfg.FixtureTable = fmt.Sprintf("%s-GameWeekFixtures", cfg.Prefix)
-
-	// Validate required fields
-	if cfg.APIEndpoint == "" {
-		return nil, fmt.Errorf("API_ENDPOINT is required")
-	}
-	if cfg.UserPoolID == "" {
-		return nil, fmt.Errorf("USER_POOL_ID is required")
-	}
+	// Validate required fields - only CLIENT_ID is required
 	if cfg.ClientID == "" {
-		return nil, fmt.Errorf("CLIENT_ID is required")
+		return nil, fmt.Errorf("CLIENT_ID is required.\nGet it from AWS Console → Cognito → User Pools → App Clients\nThen run: export CLIENT_ID=\"your-client-id\" && seven-test-tui")
 	}
 
 	return cfg, nil

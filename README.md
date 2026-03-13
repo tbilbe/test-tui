@@ -77,18 +77,19 @@ aws sso login --profile seven_engineer_seven_dev-339713102567
 export AWS_PROFILE=seven_engineer_seven_dev-339713102567
 ```
 
-### 2. Set Environment Variables
+### 2. Set Environment Variable
 
 ```bash
-export API_ENDPOINT="https://se7-int-dev.dev.api.playtheseven.com"
-export USER_POOL_ID="eu-west-2_uqwEOLO5d"
 export CLIENT_ID="your-cognito-client-id"
-export PREFIX="int-dev"
 ```
 
-**Finding your values**:
-- `CLIENT_ID`: AWS Console → Cognito → User Pools → App Clients
-- `PREFIX`: Your environment prefix (e.g., `int-dev`, `SE7-2001`)
+**Finding your CLIENT_ID**: AWS Console → Cognito → User Pools → App Clients
+
+**Optional overrides** (defaults are already set):
+```bash
+export API_ENDPOINT="https://dev.api.playtheseven.com"  # default
+export USER_POOL_ID="eu-west-2_uqwEOLO5d"               # default
+```
 
 ### 3. Run the Application
 
