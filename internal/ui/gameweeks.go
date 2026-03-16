@@ -272,6 +272,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Success message handled by err being nil
 		return m, nil
+
+	case gameWeekClosedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		}
+		return m, nil
 	}
 
 	// Route to appropriate screen
@@ -342,6 +348,12 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state.CurrentGameWeek != nil && len(m.state.Fixtures) > 0 {
 				m.showBatchModal = true
 				m.batchPresetIdx = 0
+			}
+			return m, nil
+		case "c":
+			// Close gameweek (send EndOfGameWeek event)
+			if m.state.CurrentGameWeek != nil {
+				return m, closeGameWeekCmd(m.state.CurrentGameWeek.GameWeekID, m.prefix)
 			}
 			return m, nil
 		case "r":
@@ -1167,9 +1179,10 @@ func (m Model) viewGameweekPanel() string {
 	// 	content += helpStyle.Render("c: create team\n")
 	// } else {
 	if !isCurrent {
-		content += helpStyle.Foreground(lipgloss.Color("170")).Render("m: make current\n")
+		content += helpStyle.Foreground(lipgloss.Color("202")).Render("m: make current\n")
 	}
 	content += helpStyle.Render("b: batch update\n")
+	content += helpStyle.Render("c: close gameweek\n")
 	content += helpStyle.Render("g: change gameweek\n")
 	content += helpStyle.Render("r: reset environment\n")
 	content += helpStyle.Render("q: quit")
@@ -1466,6 +1479,11 @@ type batchUpdatedMsg struct {
 type githubActionMsg struct {
 	success bool
 	err     error
+}
+
+type gameWeekClosedMsg struct {
+	gameWeekID string
+	err        error
 }
 
 // Commands
@@ -2091,5 +2109,26 @@ func triggerGitHubActionCmd(prefix string) tea.Cmd {
 
 		logger.Printf("Successfully triggered environment reset for prefix: %s", prefix)
 		return githubActionMsg{success: true}
+	}
+}
+
+func closeGameWeekCmd(gameWeekID, prefix string) tea.Cmd {
+	return func() tea.Msg {
+		logger.Printf("Closing gameweek %s for prefix: %s", gameWeekID, prefix)
+
+		ctx := context.Background()
+		ebClient, err := aws.NewEventBridgeClient(ctx, "eu-west-2", "seven_game_events_bus")
+		if err != nil {
+			logger.Printf("ERROR: Failed to create EventBridge client: %v", err)
+			return gameWeekClosedMsg{err: err}
+		}
+
+		if err := ebClient.CloseGameWeek(ctx, prefix, gameWeekID); err != nil {
+			logger.Printf("ERROR: Failed to close gameweek: %v", err)
+			return gameWeekClosedMsg{err: err}
+		}
+
+		logger.Printf("Successfully sent EndOfGameWeek event for gameweek %s", gameWeekID)
+		return gameWeekClosedMsg{gameWeekID: gameWeekID}
 	}
 }
