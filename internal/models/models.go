@@ -109,6 +109,12 @@ type Fixture struct {
 
 // Validation functions
 
+// IsDevEnv returns true when the prefix represents the shared dev environment.
+// Dev is denoted by an empty string or "dev" — it is read-only.
+func IsDevEnv(prefix string) bool {
+	return prefix == "" || prefix == "dev"
+}
+
 func ValidatePeriod(period FixturePeriod) error {
 	for _, p := range AllPeriods {
 		if p == period {

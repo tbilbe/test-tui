@@ -61,6 +61,17 @@ var (
 			Foreground(lipgloss.Color("205")).
 			Bold(true)
 
+	readOnlyBorderColor = lipgloss.Color("208") // orange
+	readOnlyTitleStyle  = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("208")).
+				MarginBottom(1)
+	readOnlyBadge = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("208")).
+			Padding(0, 1)
+
 	logo = `███████╗███████╗██╗   ██╗███████╗███╗   ██╗
 ██╔════╝██╔════╝██║   ██║██╔════╝████╗  ██║
 ███████╗█████╗  ██║   ██║█████╗  ██╔██╗ ██║
@@ -111,6 +122,7 @@ type Model struct {
 	fieldOptionIdx     int
 	showBatchModal     bool
 	batchPresetIdx     int
+	showCloseModal     bool
 	fixturePlayers     map[string]FixturePlayers // fixtureId -> players
 	showGoalModal      bool
 	goalModalIdx       int
@@ -121,6 +133,10 @@ type Model struct {
 type FixturePlayers struct {
 	HomePlayers []models.Player
 	AwayPlayers []models.Player
+}
+
+func (m Model) isReadOnly() bool {
+	return models.IsDevEnv(m.prefix)
 }
 
 func NewModel(authClient *aws.AuthClient, apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient) Model {
@@ -198,20 +214,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// Build fixture players map
 			m.fixturePlayers = make(map[string]FixturePlayers)
+			logger.Printf("Building fixture players map: %d fixtures, %d players", len(m.state.Fixtures), len(msg.players))
+			if len(msg.players) > 0 {
+				logger.Printf("Sample player: FixtureID=%q TeamID=%q", msg.players[0].FixtureID, msg.players[0].TeamID)
+			}
+			if len(m.state.Fixtures) > 0 {
+				f := m.state.Fixtures[0]
+				logger.Printf("Sample fixture: FixtureID=%q HomeTeamID=%q AwayTeamID=%q ParticipantsHome=%q ParticipantsAway=%q",
+					f.FixtureID, f.HomeTeamID, f.AwayTeamID, f.Participants.Home.TeamID, f.Participants.Away.TeamID)
+			}
 			for _, fixture := range m.state.Fixtures {
 				var homePlayers, awayPlayers []models.Player
 				for _, player := range msg.players {
-					if player.FixtureID == fixture.FixtureID {
-						if player.TeamID == fixture.Participants.Home.TeamID {
-							homePlayers = append(homePlayers, player)
-						} else if player.TeamID == fixture.Participants.Away.TeamID {
-							awayPlayers = append(awayPlayers, player)
-						}
+					if player.TeamID == fixture.Participants.Home.TeamID {
+						p := player
+						p.FixtureID = fixture.FixtureID
+						homePlayers = append(homePlayers, p)
+					} else if player.TeamID == fixture.Participants.Away.TeamID {
+						p := player
+						p.FixtureID = fixture.FixtureID
+						awayPlayers = append(awayPlayers, p)
 					}
 				}
 				m.fixturePlayers[fixture.FixtureID] = FixturePlayers{
 					HomePlayers: homePlayers,
 					AwayPlayers: awayPlayers,
+				}
+				if len(homePlayers) > 0 || len(awayPlayers) > 0 {
+					logger.Printf("Fixture %s: %d home, %d away players", fixture.FixtureID, len(homePlayers), len(awayPlayers))
 				}
 			}
 		}
@@ -314,9 +344,16 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil // Clear error
 			m.state.SetFixtures([]models.Fixture{})
 			m.state.SetSelection(nil)
+			m.fixturePlayers = nil
+			m.selectedFixtureIdx = 0
+			m.fixtureSelectMode = false
 			return m, nil
 		case "m":
 			// Make this gameweek current (update dates in DynamoDB)
+			if m.isReadOnly() {
+				m.err = fmt.Errorf("dev environment is read-only")
+				return m, nil
+			}
 			if m.state.CurrentGameWeek != nil {
 				return m, makeGameWeekCurrentCmd(m.state.CurrentGameWeek, m.prefix, m.dynamoClient)
 			}
@@ -345,21 +382,30 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 	return m, createDefaultTeamCmd(m.apiClient)
 		case "b":
 			// Open batch update modal
+			if m.isReadOnly() {
+				m.err = fmt.Errorf("dev environment is read-only")
+				return m, nil
+			}
 			if m.state.CurrentGameWeek != nil && len(m.state.Fixtures) > 0 {
 				m.showBatchModal = true
 				m.batchPresetIdx = 0
 			}
 			return m, nil
 		case "c":
-			// Close gameweek (send EndOfGameWeek event)
+			// Show close gameweek confirmation modal
+			if m.isReadOnly() {
+				m.err = fmt.Errorf("dev environment is read-only")
+				return m, nil
+			}
 			if m.state.CurrentGameWeek != nil {
-				return m, closeGameWeekCmd(m.state.CurrentGameWeek.GameWeekID, m.prefix)
+				m.showCloseModal = true
 			}
 			return m, nil
 		case "r":
-			// Trigger GitHub Actions workflow to reset environment
-			if m.prefix != "" && m.prefix != "dev" {
-				return m, triggerGitHubActionCmd(m.prefix)
+			// Refresh fixtures from API
+			m.err = nil
+			if m.state.CurrentGameWeek != nil {
+				return m, fetchFixturesCmd(m.apiClient, m.state.CurrentGameWeek.GameWeekID)
 			}
 			return m, nil
 		case "tab":
@@ -470,6 +516,10 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			} else if m.fixtureSelectMode && !m.editingFixture {
 				// Open edit modal for selected fixture
+				if m.isReadOnly() {
+					m.err = fmt.Errorf("dev environment is read-only")
+					return m, nil
+				}
 				m.selectedFixtureIdx = m.fixturesTable.Cursor()
 				m.editingFixture = true
 				m.editModalField = 0
@@ -536,6 +586,12 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "esc":
+			// Clear error first so fixtures reappear
+			if m.err != nil {
+				m.err = nil
+				m.fixtureSelectMode = false
+				return m, nil
+			}
 			// Exit selection mode or close modal
 			if m.showGoalModal {
 				m.showGoalModal = false
@@ -971,8 +1027,8 @@ func (m Model) viewPrefixScreen() string {
 
 	content := titleStyle.Render("Environment Setup") + "\n\n"
 	content += "Enter branch prefix (e.g., SE7-2701)\n"
-	content += "Leave blank for dev environment\n\n"
-	content += highlightStyle.Render("⚠ Case sensitive!") + " Match AWS table names exactly\n\n"
+	content += "Leave blank for dev environment (view only)\n\n"
+	content += highlightStyle.Render("⚠ Case sensitive!") + " We need to match AWS table names exactly\n\n"
 
 	content += "Prefix: " + inputStyle.Render(m.input) + "\n\n"
 
@@ -1050,6 +1106,9 @@ func (m Model) viewFixtureScreen() string {
 
 func (m Model) viewPlayersPanel() string {
 	borderColor := lipgloss.Color("63")
+	if m.isReadOnly() {
+		borderColor = readOnlyBorderColor
+	}
 
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -1141,6 +1200,9 @@ func (m Model) viewGameweekPanel() string {
 	if m.focusedPane == focusGameWeek {
 		borderColor = lipgloss.Color("170")
 	}
+	if m.isReadOnly() {
+		borderColor = readOnlyBorderColor
+	}
 
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -1157,6 +1219,11 @@ func (m Model) viewGameweekPanel() string {
 		prefixDisplay = m.prefix
 	}
 	content := normalStyle.Render(fmt.Sprintf("Prefix: %s\n", prefixDisplay))
+
+	if m.isReadOnly() {
+		content += readOnlyBadge.Render("READ-ONLY") + "\n"
+	}
+
 	content += titleStyle.Render(fmt.Sprintf("GameWeek %s", gw.GameWeekID))
 
 	// Check if this is the current gameweek
@@ -1174,18 +1241,22 @@ func (m Model) viewGameweekPanel() string {
 	content += fmt.Sprintf("Start: %s\n", gw.CustomerStartDate[:10])
 	content += fmt.Sprintf("End: %s\n\n", gw.CustomerEndDate[:10])
 
-	content += normalStyle.Render("Controls:\n")
-	// if isCurrent {
-	// 	content += helpStyle.Render("c: create team\n")
-	// } else {
-	if !isCurrent {
-		content += helpStyle.Foreground(lipgloss.Color("202")).Render("m: make current\n")
+	content += normalStyle.Render("Controls:") + "\n"
+	controls := ""
+	if m.isReadOnly() {
+		controls += "g: change gameweek\n"
+		controls += "q: quit"
+	} else {
+		if !isCurrent {
+			controls += "m: make current\n"
+		}
+		controls += "b: batch update\n"
+		controls += "c: close gameweek\n"
+		controls += "g: change gameweek\n"
+		controls += "r: reset environment\n"
+		controls += "q: quit"
 	}
-	content += helpStyle.Render("b: batch update\n")
-	content += helpStyle.Render("c: close gameweek\n")
-	content += helpStyle.Render("g: change gameweek\n")
-	content += helpStyle.Render("r: reset environment\n")
-	content += helpStyle.Render("q: quit")
+	content += helpStyle.Render(controls)
 
 	return style.Render(content)
 }

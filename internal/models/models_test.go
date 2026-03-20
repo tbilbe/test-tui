@@ -530,3 +530,23 @@ func TestAllFixturesPreMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestIsDevEnv(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+		want   bool
+	}{
+		{"empty string is dev", "", true},
+		{"dev string is dev", "dev", true},
+		{"branch prefix is not dev", "SE7-2001", false},
+		{"int-dev is not dev", "int-dev", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsDevEnv(tt.prefix); got != tt.want {
+				t.Errorf("IsDevEnv(%q) = %v, want %v", tt.prefix, got, tt.want)
+			}
+		})
+	}
+}
