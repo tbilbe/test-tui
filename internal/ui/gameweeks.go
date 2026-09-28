@@ -102,6 +102,7 @@ type Model struct {
 	state              *models.AppState
 	authClient         *aws.AuthClient
 	apiClient          *aws.APIClient
+	apiKey             string
 	dynamoClient       *aws.DynamoDBClient
 	currentScreen      screenType
 	authScreen         AuthScreen
@@ -139,11 +140,12 @@ func (m Model) isReadOnly() bool {
 	return models.IsDevEnv(m.prefix)
 }
 
-func NewModel(authClient *aws.AuthClient, apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient) Model {
+func NewModel(authClient *aws.AuthClient, apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient, apiKey string) Model {
 	return Model{
 		state:         models.NewAppState(),
 		authClient:    authClient,
 		apiClient:     apiClient,
+		apiKey:        apiKey,
 		dynamoClient:  dynamoClient,
 		currentScreen: authScreenType,
 		authScreen:    NewAuthScreen(),
@@ -695,12 +697,13 @@ func (m Model) updatePrefixScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Set prefix and update API URLs
 			if m.input == "" {
 				m.prefix = "dev"
-				m.apiClient = aws.NewAPIClient("https://dev.api.playtheseven.com")
+				m.apiClient = aws.NewAPIClient("https://dev.cf.playtheseven.com")
 			} else {
 				m.prefix = m.input
-				m.apiClient = aws.NewAPIClient(fmt.Sprintf("https://%s.dev.api.playtheseven.com", m.input))
+				m.apiClient = aws.NewAPIClient(fmt.Sprintf("https://%s.dev.cf.playtheseven.com", m.input))
 			}
 			m.apiClient.SetIDToken(m.authClient.GetIDToken())
+			m.apiClient.SetAPIKey(m.apiKey)
 
 			// Recreate DynamoDB client with correct table name
 			ctx := context.Background()
@@ -1033,10 +1036,10 @@ func (m Model) viewPrefixScreen() string {
 	content += "Prefix: " + inputStyle.Render(m.input) + "\n\n"
 
 	if m.input == "" {
-		content += normalStyle.Render("Will use: https://dev.api.playtheseven.com\n")
+		content += normalStyle.Render("Will use: https://dev.cf.playtheseven.com\n")
 		content += normalStyle.Render("Tables: int-dev-GameWeek, int-dev-GameWeekFixtures\n\n")
 	} else {
-		content += normalStyle.Render(fmt.Sprintf("Will use: https://%s.dev.api.playtheseven.com\n", m.input))
+		content += normalStyle.Render(fmt.Sprintf("Will use: https://%s.dev.cf.playtheseven.com\n", m.input))
 		content += normalStyle.Render(fmt.Sprintf("Tables: %s-GameWeek, %s-GameWeekFixtures\n\n", m.input, m.input))
 	}
 

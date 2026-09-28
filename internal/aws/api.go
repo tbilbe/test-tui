@@ -14,6 +14,7 @@ type APIClient struct {
 	baseURL    string
 	httpClient *http.Client
 	idToken    string
+	apiKey     string
 }
 
 func NewAPIClient(baseURL string) *APIClient {
@@ -29,6 +30,10 @@ func (a *APIClient) SetIDToken(token string) {
 	a.idToken = token
 }
 
+func (a *APIClient) SetAPIKey(key string) {
+	a.apiKey = key
+}
+
 func (a *APIClient) get(ctx context.Context, path string, result interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", a.baseURL+path, nil)
 	if err != nil {
@@ -37,6 +42,9 @@ func (a *APIClient) get(ctx context.Context, path string, result interface{}) er
 
 	if a.idToken != "" {
 		req.Header.Set("Authorization", "Bearer "+a.idToken)
+	}
+	if a.apiKey != "" {
+		req.Header.Set("x-seven-api-key", a.apiKey)
 	}
 
 	resp, err := a.httpClient.Do(req)
@@ -122,6 +130,9 @@ func (a *APIClient) put(ctx context.Context, path string, body interface{}) erro
 	req.Header.Set("Content-Type", "application/json")
 	if a.idToken != "" {
 		req.Header.Set("Authorization", "Bearer "+a.idToken)
+	}
+	if a.apiKey != "" {
+		req.Header.Set("x-seven-api-key", a.apiKey)
 	}
 
 	resp, err := a.httpClient.Do(req)

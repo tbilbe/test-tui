@@ -77,18 +77,23 @@ aws sso login --profile seven_engineer_seven_dev-339713102567
 export AWS_PROFILE=seven_engineer_seven_dev-339713102567
 ```
 
-### 2. Set Environment Variable
+### 2. Set Environment Variables
 
 ```bash
 export CLIENT_ID="your-cognito-client-id"
+export API_KEY="your-api-key"
 ```
 
 **Finding your CLIENT_ID**: AWS Console → Cognito → User Pools → App Clients
 
+**Finding your API_KEY**: Use the same value as the mobile app's `.env` `API_KEY`.
+This is sent as the `x-seven-api-key` header so requests go through the CloudFront
+front door (WAF). It is **required** — the app exits if it is not set.
+
 **Optional overrides** (defaults are already set):
 ```bash
-export API_ENDPOINT="https://dev.api.playtheseven.com"  # default
-export USER_POOL_ID="eu-west-2_uqwEOLO5d"               # default
+export API_ENDPOINT="https://dev.cf.playtheseven.com"  # default (front door, note the .cf. host)
+export USER_POOL_ID="eu-west-2_uqwEOLO5d"              # default
 ```
 
 ### 3. Run the Application

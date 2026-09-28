@@ -7,12 +7,14 @@ import (
 
 func TestLoad_AllEnvVarsSet(t *testing.T) {
 	os.Setenv("API_ENDPOINT", "https://test.api.example.com")
+	os.Setenv("API_KEY", "test-key-123")
 	os.Setenv("USER_POOL_ID", "eu-west-2_test123")
 	os.Setenv("CLIENT_ID", "test-client-id")
 	os.Setenv("PREFIX", "test-prefix")
 	os.Setenv("AWS_REGION", "us-east-1")
 	defer func() {
 		os.Unsetenv("API_ENDPOINT")
+		os.Unsetenv("API_KEY")
 		os.Unsetenv("USER_POOL_ID")
 		os.Unsetenv("CLIENT_ID")
 		os.Unsetenv("PREFIX")
@@ -26,6 +28,9 @@ func TestLoad_AllEnvVarsSet(t *testing.T) {
 
 	if cfg.APIEndpoint != "https://test.api.example.com" {
 		t.Errorf("APIEndpoint = %q, want %q", cfg.APIEndpoint, "https://test.api.example.com")
+	}
+	if cfg.APIKey != "test-key-123" {
+		t.Errorf("APIKey = %q, want %q", cfg.APIKey, "test-key-123")
 	}
 	if cfg.UserPoolID != "eu-west-2_test123" {
 		t.Errorf("UserPoolID = %q, want %q", cfg.UserPoolID, "eu-west-2_test123")
@@ -42,21 +47,25 @@ func TestLoad_AllEnvVarsSet(t *testing.T) {
 }
 
 func TestLoad_DefaultValues(t *testing.T) {
-	// Only CLIENT_ID is required, others have defaults
+	// CLIENT_ID and API_KEY are required, others have defaults
 	os.Setenv("CLIENT_ID", "test-client-id")
+	os.Setenv("API_KEY", "test-api-key")
 	os.Unsetenv("API_ENDPOINT")
 	os.Unsetenv("USER_POOL_ID")
 	os.Unsetenv("PREFIX")
 	os.Unsetenv("AWS_REGION")
-	defer os.Unsetenv("CLIENT_ID")
+	defer func() {
+		os.Unsetenv("CLIENT_ID")
+		os.Unsetenv("API_KEY")
+	}()
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.APIEndpoint != "https://dev.api.playtheseven.com" {
-		t.Errorf("APIEndpoint default = %q, want %q", cfg.APIEndpoint, "https://dev.api.playtheseven.com")
+	if cfg.APIEndpoint != "https://dev.cf.playtheseven.com" {
+		t.Errorf("APIEndpoint default = %q, want %q", cfg.APIEndpoint, "https://dev.cf.playtheseven.com")
 	}
 	if cfg.UserPoolID != "eu-west-2_uqwEOLO5d" {
 		t.Errorf("UserPoolID default = %q, want %q", cfg.UserPoolID, "eu-west-2_uqwEOLO5d")
@@ -71,10 +80,23 @@ func TestLoad_DefaultValues(t *testing.T) {
 
 func TestLoad_MissingClientID(t *testing.T) {
 	os.Unsetenv("CLIENT_ID")
+	os.Setenv("API_KEY", "test-api-key")
+	defer os.Unsetenv("API_KEY")
 
 	_, err := Load()
 	if err == nil {
 		t.Error("Load() should return error when CLIENT_ID is missing")
+	}
+}
+
+func TestLoad_MissingAPIKey(t *testing.T) {
+	os.Setenv("CLIENT_ID", "test-client-id")
+	os.Unsetenv("API_KEY")
+	defer os.Unsetenv("CLIENT_ID")
+
+	_, err := Load()
+	if err == nil {
+		t.Error("Load() should return error when API_KEY is missing")
 	}
 }
 
