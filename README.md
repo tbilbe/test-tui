@@ -80,20 +80,44 @@ export AWS_PROFILE=seven_engineer_seven_dev-339713102567
 ### 2. Set Environment Variables
 
 ```bash
-export CLIENT_ID="your-cognito-client-id"
 export API_KEY="your-api-key"
+export SEVEN_ACCESS_TOKEN="your-oauth2-access-token"   # recommended, see below
 ```
-
-**Finding your CLIENT_ID**: AWS Console → Cognito → User Pools → App Clients
 
 **Finding your API_KEY**: Use the same value as the mobile app's `.env` `API_KEY`.
 This is sent as the `x-seven-api-key` header so requests go through the CloudFront
 front door (WAF). It is **required** — the app exits if it is not set.
 
+#### Authentication / Bearer token
+
+The read API is **not** protected by Cognito username/password — it expects a
+bwin/Entain **OAuth2 access token** (the mobile app obtains one via
+`{API_ENDPOINT}/oauth2/authorize` with client `Angstrom` and the `scp_angstrom`
+scope). The token is sent as `Authorization: Bearer <token>`.
+
+Because a CLI can't easily complete the browser OAuth2 flow yet, the current
+recommended path is to **paste a valid access token**:
+
+```bash
+export SEVEN_ACCESS_TOKEN="<paste a bwin OAuth2 access token>"
+```
+
+When `SEVEN_ACCESS_TOKEN` is set, the app **skips the Cognito login screen** and
+uses the pasted token as the Bearer. Get the token from a logged-in mobile app
+session (e.g. capture the `Authorization` header on a `/game-weeks` request) or a
+browser login at `{API_ENDPOINT}/oauth2/authorize`. Tokens are short-lived, so
+re-paste when it expires.
+
+> Note: the legacy Cognito username/password flow (`CLIENT_ID` / `USER_POOL_ID`)
+> is still present but currently produces tokens the API authorizer rejects with
+> a 403. Use `SEVEN_ACCESS_TOKEN` until the in-app OAuth2 flow lands. When using
+> the bootstrap token, `CLIENT_ID` is not required.
+
 **Optional overrides** (defaults are already set):
 ```bash
 export API_ENDPOINT="https://dev.cf.playtheseven.com"  # default (front door, note the .cf. host)
-export USER_POOL_ID="eu-west-2_uqwEOLO5d"              # default
+export USER_POOL_ID="eu-west-2_uqwEOLO5d"              # default (legacy Cognito flow only)
+export CLIENT_ID="your-cognito-client-id"             # legacy Cognito flow only
 ```
 
 ### 3. Run the Application
@@ -102,12 +126,13 @@ export USER_POOL_ID="eu-west-2_uqwEOLO5d"              # default
 ./seven-test-tui
 ```
 
-**First Run**:
-1. You'll be prompted for Cognito username and password
-2. After authentication, the gameweek list will load
-3. Use arrow keys or j/k to navigate
-4. Press Enter to select a gameweek
-5. Press q to quit
+**First Run** (with `SEVEN_ACCESS_TOKEN` set):
+1. The app skips login and opens the environment (prefix) screen
+2. Enter your prefix (e.g. `se7-tomb` — casing is normalised to `SE7-` for tables)
+3. The gameweek list will load
+4. Use arrow keys or j/k to navigate
+5. Press Enter to select a gameweek
+6. Press q to quit
 
 ## 🎮 Usage
 
@@ -124,7 +149,7 @@ export USER_POOL_ID="eu-west-2_uqwEOLO5d"              # default
 
 ### Workflow
 
-1. **Start TUI** → Enter Cognito username/password
+1. **Start TUI** → With `SEVEN_ACCESS_TOKEN` set, login is skipped and you go straight to the prefix screen
 2. **Select GameWeek** → Navigate list, press Enter
 3. **View Fixtures** → See all fixtures for selected gameweek
 4. **Edit Fixture** → Select fixture, press `e`
