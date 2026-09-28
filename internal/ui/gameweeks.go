@@ -11,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/angstromsports/seven-test-tui/internal/aws"
@@ -22,6 +23,14 @@ import (
 )
 
 var logger *log.Logger
+
+// multipleGameWeeksMsg explains the backend's "Multiple game weeks found" 500,
+// which happens when more than one gameweek is live at once so the current-
+// gameweek player lookup is ambiguous.
+const multipleGameWeeksMsg = "More than one gameweek is currently live, so players can't be resolved.\n" +
+	"Any fixture updates you just made were still saved successfully.\n\n" +
+	"Reset data between gameweeks: set the other live gameweek's fixtures back to\n" +
+	"PRE_MATCH so only one gameweek is current, then press r to refresh."
 
 func init() {
 	// Create log file
@@ -103,6 +112,7 @@ type Model struct {
 	authClient         *aws.AuthClient
 	apiClient          *aws.APIClient
 	apiKey             string
+	bootstrapToken     string
 	dynamoClient       *aws.DynamoDBClient
 	currentScreen      screenType
 	authScreen         AuthScreen
@@ -140,16 +150,25 @@ func (m Model) isReadOnly() bool {
 	return models.IsDevEnv(m.prefix)
 }
 
-func NewModel(authClient *aws.AuthClient, apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient, apiKey string) Model {
+func NewModel(authClient *aws.AuthClient, apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient, apiKey string, bootstrapToken string) Model {
+	// When a bootstrap OAuth2 access token is provided, skip the Cognito
+	// username/password screen and go straight to environment selection.
+	startScreen := authScreenType
+	if bootstrapToken != "" {
+		startScreen = prefixScreenType
+		apiClient.SetIDToken(bootstrapToken)
+	}
+
 	return Model{
-		state:         models.NewAppState(),
-		authClient:    authClient,
-		apiClient:     apiClient,
-		apiKey:        apiKey,
-		dynamoClient:  dynamoClient,
-		currentScreen: authScreenType,
-		authScreen:    NewAuthScreen(),
-		inputMode:     true,
+		state:          models.NewAppState(),
+		authClient:     authClient,
+		apiClient:      apiClient,
+		apiKey:         apiKey,
+		bootstrapToken: bootstrapToken,
+		dynamoClient:   dynamoClient,
+		currentScreen:  startScreen,
+		authScreen:     NewAuthScreen(),
+		inputMode:      true,
 	}
 }
 
@@ -702,15 +721,16 @@ func (m Model) updatePrefixScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.prefix = m.input
 				m.apiClient = aws.NewAPIClient(fmt.Sprintf("https://%s.dev.cf.playtheseven.com", m.input))
 			}
-			m.apiClient.SetIDToken(m.authClient.GetIDToken())
+			if m.bootstrapToken != "" {
+				m.apiClient.SetIDToken(m.bootstrapToken)
+			} else {
+				m.apiClient.SetIDToken(m.authClient.GetAccessToken())
+			}
 			m.apiClient.SetAPIKey(m.apiKey)
 
 			// Recreate DynamoDB client with correct table name
 			ctx := context.Background()
-			tableName := m.prefix + "-GameWeek"
-			if m.prefix == "dev" || m.prefix == "" {
-				tableName = "int-dev-GameWeek"
-			}
+			tableName := models.TableName(m.prefix, "GameWeek")
 			dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", tableName)
 			if err != nil {
 				m.err = fmt.Errorf("failed to create dynamo client: %w", err)
@@ -1043,10 +1063,10 @@ func (m Model) viewPrefixScreen() string {
 
 	if m.input == "" {
 		content += normalStyle.Render("Will use: https://dev.cf.playtheseven.com\n")
-		content += normalStyle.Render("Tables: int-dev-GameWeek, int-dev-GameWeekFixtures\n\n")
+		content += normalStyle.Render("Tables: dev-GameWeek, dev-GameWeekFixtures\n\n")
 	} else {
 		content += normalStyle.Render(fmt.Sprintf("Will use: https://%s.dev.cf.playtheseven.com\n", m.input))
-		content += normalStyle.Render(fmt.Sprintf("Tables: %s-GameWeek, %s-GameWeekFixtures\n\n", m.input, m.input))
+		content += normalStyle.Render(fmt.Sprintf("Tables: %s, %s\n\n", models.TableName(m.input, "GameWeek"), models.TableName(m.input, "GameWeekFixtures")))
 	}
 
 	content += normalStyle.Render("enter: continue • q: quit")
@@ -1582,7 +1602,7 @@ func authenticateCmd(client *aws.AuthClient, username, password string) tea.Cmd 
 		if err := client.SignIn(ctx, username, password); err != nil {
 			return authErrorMsg{err: err}
 		}
-		return authSuccessMsg{token: client.GetIDToken()}
+		return authSuccessMsg{token: client.GetAccessToken()}
 	}
 }
 
@@ -1748,6 +1768,9 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 		data, err := client.GetGameWeekPlayers(ctx)
 		if err != nil {
 			logger.Printf("ERROR: Failed to fetch players: %v", err)
+			if strings.Contains(err.Error(), "Multiple game weeks found") {
+				return teamCreatedMsg{err: fmt.Errorf("%s", multipleGameWeeksMsg)}
+			}
 			return teamCreatedMsg{err: err}
 		}
 
@@ -1884,10 +1907,7 @@ func updateFixtureCmd(fixture *models.Fixture, prefix string, gameWeek *models.G
 		ctx := context.Background()
 
 		// Create DynamoDB client for Fixtures table
-		tableName := prefix + "-GameWeekFixtures"
-		if prefix == "dev" || prefix == "" {
-			tableName = "int-dev-GameWeekFixtures"
-		}
+		tableName := models.TableName(prefix, "GameWeekFixtures")
 
 		logger.Printf("Using table: %s", tableName)
 		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", tableName)
@@ -1947,10 +1967,7 @@ func updateFixtureCmd(fixture *models.Fixture, prefix string, gameWeek *models.G
 			}
 
 			if shouldUpdate {
-				gameWeekTable := prefix + "-GameWeek"
-				if prefix == "dev" || prefix == "" {
-					gameWeekTable = "int-dev-GameWeek"
-				}
+				gameWeekTable := models.TableName(prefix, "GameWeek")
 
 				gwClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", gameWeekTable)
 				if err != nil {
@@ -1977,10 +1994,7 @@ func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix str
 
 		ctx := context.Background()
 
-		fixturesTable := prefix + "-GameWeekFixtures"
-		if prefix == "dev" || prefix == "" {
-			fixturesTable = "int-dev-GameWeekFixtures"
-		}
+		fixturesTable := models.TableName(prefix, "GameWeekFixtures")
 
 		logger.Printf("Creating DynamoDB client for table: %s", fixturesTable)
 		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", fixturesTable)
@@ -2040,10 +2054,7 @@ func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix str
 			}
 
 			if shouldUpdate {
-				gameWeekTable := prefix + "-GameWeek"
-				if prefix == "dev" || prefix == "" {
-					gameWeekTable = "int-dev-GameWeek"
-				}
+				gameWeekTable := models.TableName(prefix, "GameWeek")
 
 				gwClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", gameWeekTable)
 				if err != nil {
@@ -2114,6 +2125,13 @@ func fetchPlayersCmd(apiClient *aws.APIClient, gameWeekID string, fixtures []mod
 		data, err := apiClient.GetGameWeekPlayers(ctx)
 		if err != nil {
 			logger.Printf("ERROR: Failed to fetch players from API: %v", err)
+			// The unscoped /game-week/players endpoint resolves the *current*
+			// gameweek server-side. If more than one gameweek is in a live state
+			// (a common side effect of batch-updating fixtures across gameweeks),
+			// the backend can't pick one and returns "Multiple game weeks found".
+			if strings.Contains(err.Error(), "Multiple game weeks found") {
+				return playersLoadedMsg{err: fmt.Errorf("%s", multipleGameWeeksMsg)}
+			}
 			return playersLoadedMsg{err: err}
 		}
 

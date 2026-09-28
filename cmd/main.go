@@ -43,7 +43,7 @@ func main() {
 
 	// Run TUI with auth screen
 	p := tea.NewProgram(
-		ui.NewModel(authClient, apiClient, dynamoClient, cfg.APIKey),
+		ui.NewModel(authClient, apiClient, dynamoClient, cfg.APIKey, cfg.AccessToken),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)

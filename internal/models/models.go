@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -113,6 +114,28 @@ type Fixture struct {
 // Dev is denoted by an empty string or "dev" — it is read-only.
 func IsDevEnv(prefix string) bool {
 	return prefix == "" || prefix == "dev"
+}
+
+// CanonicalPrefix normalises a user-entered environment prefix to the exact
+// casing used by the DynamoDB tables. All prefix environments are provisioned
+// with an uppercase "SE7-" literal (e.g. "SE7-tomb", "SE7-4860"), while the
+// suffix keeps its original case. DynamoDB table names are case-sensitive, so a
+// prefix typed as "se7-tomb" must become "SE7-tomb" to resolve the real table.
+func CanonicalPrefix(prefix string) string {
+	if len(prefix) >= 4 && strings.EqualFold(prefix[:4], "se7-") {
+		return "SE7-" + prefix[4:]
+	}
+	return prefix
+}
+
+// TableName builds a fully-qualified DynamoDB table name for the given prefix
+// and table suffix (e.g. "GameWeekFixtures"). The shared dev environment maps to
+// the "dev-" tables; all other prefixes are canonicalised to "SE7-" casing.
+func TableName(prefix, suffix string) string {
+	if IsDevEnv(prefix) {
+		return "dev-" + suffix
+	}
+	return CanonicalPrefix(prefix) + "-" + suffix
 }
 
 func ValidatePeriod(period FixturePeriod) error {

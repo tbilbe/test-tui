@@ -112,7 +112,7 @@ func (a *APIClient) GetCurrentFixtures(ctx context.Context) (map[string]interfac
 
 func (a *APIClient) GetFixturesByGameWeek(ctx context.Context, gameWeekID string) (map[string]interface{}, error) {
 	var fixtures map[string]interface{}
-	path := fmt.Sprintf("/game-week/%s/fixtures", gameWeekID)
+	path := fmt.Sprintf("/game-weeks/%s/fixtures", gameWeekID)
 	if err := a.get(ctx, path, &fixtures); err != nil {
 		return nil, err
 	}

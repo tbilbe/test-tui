@@ -100,6 +100,24 @@ func TestLoad_MissingAPIKey(t *testing.T) {
 	}
 }
 
+func TestLoad_AccessTokenRelaxesClientID(t *testing.T) {
+	os.Unsetenv("CLIENT_ID")
+	os.Setenv("API_KEY", "test-api-key")
+	os.Setenv("SEVEN_ACCESS_TOKEN", "pasted-oauth2-token")
+	defer func() {
+		os.Unsetenv("API_KEY")
+		os.Unsetenv("SEVEN_ACCESS_TOKEN")
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() should succeed without CLIENT_ID when SEVEN_ACCESS_TOKEN is set, got: %v", err)
+	}
+	if cfg.AccessToken != "pasted-oauth2-token" {
+		t.Errorf("AccessToken = %q, want %q", cfg.AccessToken, "pasted-oauth2-token")
+	}
+}
+
 func TestGetEnv_WithValue(t *testing.T) {
 	os.Setenv("TEST_VAR", "test-value")
 	defer os.Unsetenv("TEST_VAR")
