@@ -953,6 +953,12 @@ func (m Model) updateGameweekScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "q":
 				return m, tea.Quit
+			case "r":
+				// Retry loading gameweeks after an error
+				if m.err != nil {
+					m.err = nil
+					return m, fetchGameWeeksCmd(m.apiClient)
+				}
 			case "enter":
 				if m.input != "" {
 					for i, gw := range m.state.GameWeeks {
@@ -1055,6 +1061,15 @@ func (m Model) viewGameweekScreen() string {
 	header := logoStyle.Render(logo) + "\n\n"
 
 	if len(m.state.GameWeeks) == 0 {
+		if m.err != nil {
+			box := boxStyle.Width(70).Render(
+				highlightStyle.Render("Failed to load GameWeeks") + "\n\n" +
+					normalStyle.Render(m.err.Error()) + "\n\n" +
+					normalStyle.Render("See seven-test-tui.log for details.") + "\n" +
+					normalStyle.Render("r: retry • q: quit • esc: back"),
+			)
+			return lipgloss.JoinVertical(lipgloss.Center, header, box)
+		}
 		box := boxStyle.Width(50).Render(
 			titleStyle.Render("Loading GameWeeks...") + "\n\n" +
 				"Please wait...",

@@ -6,9 +6,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"time"
 )
+
+// apiLogger writes API request/response diagnostics to seven-test-tui.log
+// so failures are visible even when the UI shows a loading state.
+var apiLogger *log.Logger
+
+func init() {
+	f, err := os.OpenFile("seven-test-tui.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		apiLogger = log.New(io.Discard, "", 0)
+		return
+	}
+	apiLogger = log.New(f, "[api] ", log.LstdFlags)
+}
 
 type APIClient struct {
 	baseURL    string
@@ -35,8 +50,12 @@ func (a *APIClient) SetAPIKey(key string) {
 }
 
 func (a *APIClient) get(ctx context.Context, path string, result interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", a.baseURL+path, nil)
+	url := a.baseURL + path
+	apiLogger.Printf("GET %s (auth=%t apiKey=%t)", url, a.idToken != "", a.apiKey != "")
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
+		apiLogger.Printf("GET %s: build request error: %v", url, err)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -49,20 +68,26 @@ func (a *APIClient) get(ctx context.Context, path string, result interface{}) er
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		apiLogger.Printf("GET %s: transport error: %v", url, err)
+		return fmt.Errorf("request to %s failed: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		apiLogger.Printf("GET %s: read body error: %v", url, err)
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
+	apiLogger.Printf("GET %s -> %d (%d bytes)", url, resp.StatusCode, len(body))
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+		apiLogger.Printf("GET %s: error body: %s", url, string(body))
+		return fmt.Errorf("API error from %s (status %d): %s", url, resp.StatusCode, string(body))
 	}
 
 	if err := json.Unmarshal(body, result); err != nil {
+		apiLogger.Printf("GET %s: unmarshal error: %v", url, err)
 		return fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
