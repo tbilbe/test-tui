@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/angstromsports/seven-test-tui/internal/models"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
@@ -33,10 +34,14 @@ func BuildEventSource(prefix string) string {
 	if prefix == "" || prefix == "dev" {
 		return "int-dev.gameWeekManagement"
 	}
-	return prefix + ".gameWeekManagement"
+	return models.CanonicalPrefix(prefix) + ".gameWeekManagement"
 }
 
 func (c *EventBridgeClient) CloseGameWeek(ctx context.Context, prefix, gameWeekID string) error {
+	if err := AssertWritable(prefix); err != nil {
+		return err
+	}
+
 	source := BuildEventSource(prefix)
 
 	detail, _ := json.Marshal(map[string]interface{}{

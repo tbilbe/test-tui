@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -27,21 +28,25 @@ var AllPeriods = []FixturePeriod{
 type Position string
 
 const (
-	PositionForward    Position = "FORWARD"
-	PositionMidfielder Position = "MIDFIELDER"
-	PositionDefender   Position = "DEFENDER"
+	PositionForward    Position = "Forward"
+	PositionMidfielder Position = "Midfielder"
+	PositionDefender   Position = "Defender"
 )
 
 type Player struct {
-	PlayerID    string   `json:"playerId"`
-	FirstName   string   `json:"firstName"`
-	LastName    string   `json:"lastName"`
-	PlayerName  string   `json:"playerName"`
-	Position    Position `json:"position"`
-	TeamID      string   `json:"teamId"`
-	TeamName    string   `json:"teamName"`
-	ShirtNumber int      `json:"shirtNumber"`
-	FixtureID   string   `json:"fixtureId"`
+	PlayerID            string   `json:"playerId"`
+	FirstName           string   `json:"firstName"`
+	LastName            string   `json:"lastName"`
+	PlayerName          string   `json:"playerName"`
+	Position            Position `json:"position"`
+	TeamID              string   `json:"teamId"`
+	TeamName            string   `json:"teamName"`
+	ShirtNumber         int      `json:"shirtNumber"`
+	FixtureID           string   `json:"fixtureId"`
+	Ineligible          bool     `json:"ineligible"`
+	InjuryStatus        string   `json:"injuryStatus"`
+	SuspensionStatus    string   `json:"suspensionStatus"`
+	MatchDaySquadStatus string   `json:"matchDaySquadStatus"`
 }
 
 type Selection struct {
@@ -92,28 +97,36 @@ type Goal struct {
 }
 
 type Fixture struct {
-	FixtureID     string                 `json:"fixtureId" dynamodbav:"fixtureId"`
-	GameWeekID    string                 `json:"gameWeekId" dynamodbav:"gameWeekId"`
-	StartDate     string                 `json:"startDate" dynamodbav:"startDate"`
-	Period        FixturePeriod          `json:"period" dynamodbav:"period"`
-	ClockTimeMin  int                    `json:"clockTimeMin" dynamodbav:"clockTimeMin"`
-	ClockTimeSec  int                    `json:"clockTimeSec" dynamodbav:"clockTimeSec"`
-	HomeScore     *int                   `json:"homeScore,omitempty" dynamodbav:"homeScore,omitempty"`
-	AwayScore     *int                   `json:"awayScore,omitempty" dynamodbav:"awayScore,omitempty"`
-	HomeTeamID    string                 `json:"homeTeamId" dynamodbav:"homeTeamId"`
-	AwayTeamID    string                 `json:"awayTeamId" dynamodbav:"awayTeamId"`
-	Participants  Participants           `json:"participants" dynamodbav:"participants"`
-	Goals         []Goal                 `json:"goals,omitempty" dynamodbav:"goals,omitempty"`
-	FixtureStatus string                 `json:"fixtureStatus,omitempty" dynamodbav:"fixtureStatus,omitempty"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
+	FixtureID        string                 `json:"fixtureId" dynamodbav:"fixtureId"`
+	GameWeekID       string                 `json:"gameWeekId" dynamodbav:"gameWeekId"`
+	StartDate        string                 `json:"startDate" dynamodbav:"startDate"`
+	Period           FixturePeriod          `json:"period" dynamodbav:"period"`
+	ClockTimeMin     int                    `json:"clockTimeMin" dynamodbav:"clockTimeMin"`
+	HomeScore        *int                   `json:"homeScore,omitempty" dynamodbav:"homeScore,omitempty"`
+	AwayScore        *int                   `json:"awayScore,omitempty" dynamodbav:"awayScore,omitempty"`
+	HomeTeamID       string                 `json:"homeTeamId" dynamodbav:"homeTeamId"`
+	AwayTeamID       string                 `json:"awayTeamId" dynamodbav:"awayTeamId"`
+	Participants     Participants           `json:"participants" dynamodbav:"participants"`
+	Goals            []Goal                 `json:"goals,omitempty" dynamodbav:"goals,omitempty"`
+	FixtureStatus    string                 `json:"fixtureStatus,omitempty" dynamodbav:"fixtureStatus,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty" dynamodbav:"metadata,omitempty"`
+	RemoveAttributes map[string]bool        `json:"-" dynamodbav:"-"`
 }
 
-// Validation functions
+const SEVEN_TUI_ALLOW_WRITES = "SEVEN_TUI_ALLOW_WRITES"
 
-// IsDevEnv returns true when the prefix represents the shared dev environment.
-// Dev is denoted by an empty string or "dev" — it is read-only.
-func IsDevEnv(prefix string) bool {
+func isSharedDevPrefix(prefix string) bool {
 	return prefix == "" || prefix == "dev"
+}
+
+// IsWriteAllowed reports whether writes are explicitly enabled for an approved prefix.
+func IsWriteAllowed(prefix string) bool {
+	if os.Getenv(SEVEN_TUI_ALLOW_WRITES) != "true" {
+		return false
+	}
+
+	canonicalPrefix := CanonicalPrefix(prefix)
+	return strings.HasPrefix(canonicalPrefix, "SE7-") || canonicalPrefix == "int-dev"
 }
 
 // CanonicalPrefix normalises a user-entered environment prefix to the exact
@@ -132,7 +145,7 @@ func CanonicalPrefix(prefix string) string {
 // and table suffix (e.g. "GameWeekFixtures"). The shared dev environment maps to
 // the "dev-" tables; all other prefixes are canonicalised to "SE7-" casing.
 func TableName(prefix, suffix string) string {
-	if IsDevEnv(prefix) {
+	if isSharedDevPrefix(prefix) {
 		return "dev-" + suffix
 	}
 	return CanonicalPrefix(prefix) + "-" + suffix
@@ -147,15 +160,11 @@ func ValidatePeriod(period FixturePeriod) error {
 	return fmt.Errorf("invalid period: %s", period)
 }
 
-func ValidateClockTime(period FixturePeriod, min, sec int) error {
-	if sec < 0 || sec > 59 {
-		return fmt.Errorf("seconds must be between 0 and 59")
-	}
-
+func ValidateClockTime(period FixturePeriod, min int) error {
 	switch period {
 	case PeriodPreMatch:
-		if min != 0 || sec != 0 {
-			return fmt.Errorf("PRE_MATCH must have time 00:00")
+		if min != 0 {
+			return fmt.Errorf("PRE_MATCH must have time 00")
 		}
 	case PeriodFirstHalf, PeriodHalfTime:
 		if min < 0 || min > 45 {
@@ -189,7 +198,7 @@ func (f *Fixture) Validate() error {
 	if err := ValidatePeriod(f.Period); err != nil {
 		return err
 	}
-	if err := ValidateClockTime(f.Period, f.ClockTimeMin, f.ClockTimeSec); err != nil {
+	if err := ValidateClockTime(f.Period, f.ClockTimeMin); err != nil {
 		return err
 	}
 	if err := ValidateScore(f.HomeScore); err != nil {
@@ -213,29 +222,28 @@ func (f *Fixture) ApplyPreset(preset string, futureStart, pastStart string) {
 		f.Period = PeriodPreMatch
 		f.FixtureStatus = ""
 		f.ClockTimeMin = 0
-		f.ClockTimeSec = 0
 		f.HomeScore = nil
 		f.AwayScore = nil
 		f.Goals = nil
+		f.RemoveAttributes = map[string]bool{
+			"homeScore": true,
+			"awayScore": true,
+			"goals":     true,
+		}
 		f.StartDate = futureStart
 	case "kickoff":
 		f.Period = PeriodFirstHalf
-		f.FixtureStatus = "IN_PLAY"
 		f.ClockTimeMin = 0
-		f.ClockTimeSec = 0
 		f.StartDate = pastStart
 	case "halftime":
 		f.Period = PeriodHalfTime
 		f.ClockTimeMin = 45
-		f.ClockTimeSec = 0
 	case "secondhalf":
 		f.Period = PeriodSecondHalf
 		f.ClockTimeMin = 45
-		f.ClockTimeSec = 0
 	case "fulltime":
 		f.Period = PeriodFullTime
 		f.ClockTimeMin = 90
-		f.ClockTimeSec = 0
 	}
 }
 

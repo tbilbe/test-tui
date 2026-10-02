@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,8 +94,7 @@ var (
 type screenType int
 
 const (
-	authScreenType screenType = iota
-	prefixScreenType
+	prefixScreenType screenType = iota
 	gameweekScreenType
 	fixtureScreenType
 )
@@ -109,13 +109,12 @@ const (
 
 type Model struct {
 	state              *models.AppState
-	authClient         *aws.AuthClient
 	apiClient          *aws.APIClient
 	apiKey             string
-	bootstrapToken     string
+	accessToken        string
+	tokenRefresher     aws.TokenRefresher
 	dynamoClient       *aws.DynamoDBClient
 	currentScreen      screenType
-	authScreen         AuthScreen
 	input              string
 	inputMode          bool
 	err                error
@@ -126,7 +125,7 @@ type Model struct {
 	fixtureSelectMode  bool
 	selectedFixtureIdx int
 	editingFixture     bool
-	editModalField     int // 0=period, 1=homeScore, 2=awayScore, 3=clockMin, 4=clockSec
+	editModalField     int // 0=period, 1=homeScore, 2=awayScore, 3=clockMin
 	fixturesTable      table.Model
 	showFieldSelect    bool
 	fieldOptions       []string
@@ -147,33 +146,43 @@ type FixturePlayers struct {
 }
 
 func (m Model) isReadOnly() bool {
-	return models.IsDevEnv(m.prefix)
+	return !models.IsWriteAllowed(m.prefix)
 }
 
-func NewModel(authClient *aws.AuthClient, apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient, apiKey string, bootstrapToken string) Model {
-	// When a bootstrap OAuth2 access token is provided, skip the Cognito
-	// username/password screen and go straight to environment selection.
-	startScreen := authScreenType
-	if bootstrapToken != "" {
-		startScreen = prefixScreenType
-		apiClient.SetIDToken(bootstrapToken)
+func (m *Model) replaceFixture(updated models.Fixture) {
+	for i := range m.state.Fixtures {
+		if m.state.Fixtures[i].FixtureID == updated.FixtureID {
+			m.state.Fixtures[i] = updated
+			m.buildFixturesTable()
+			return
+		}
 	}
+}
+
+func (m *Model) setCurrentGameWeek(gameWeek *models.GameWeek) {
+	if gameWeek != nil {
+		updated := *gameWeek
+		m.state.SetCurrentGameWeek(&updated)
+	}
+}
+func NewModel(apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient, apiKey, accessToken string, tokenRefresher aws.TokenRefresher) Model {
+	apiClient.SetIDToken(accessToken)
+	apiClient.SetTokenRefresher(tokenRefresher)
 
 	return Model{
 		state:          models.NewAppState(),
-		authClient:     authClient,
 		apiClient:      apiClient,
 		apiKey:         apiKey,
-		bootstrapToken: bootstrapToken,
+		accessToken:    accessToken,
+		tokenRefresher: tokenRefresher,
 		dynamoClient:   dynamoClient,
-		currentScreen:  startScreen,
-		authScreen:     NewAuthScreen(),
+		currentScreen:  prefixScreenType,
 		inputMode:      true,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.authScreen.Init()
+	return nil
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -186,22 +195,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-
-	case authSubmitMsg:
-		// Authenticate
-		return m, authenticateCmd(m.authClient, msg.username, msg.password)
-
-	case authSuccessMsg:
-		// Move to prefix screen
-		m.apiClient.SetIDToken(msg.token)
-		m.currentScreen = prefixScreenType
-		m.inputMode = true
-		return m, nil
-
-	case authErrorMsg:
-		m.err = msg.err
-		m.authScreen = NewAuthScreen()
-		return m, m.authScreen.Init()
 
 	case gameWeeksLoadedMsg:
 		if msg.err != nil {
@@ -288,9 +281,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
-			// Update the gameweek in state
-			m.state.SetCurrentGameWeek(msg.gameWeek)
-			// Refresh gameweeks list
+			gameWeek := msg.gameWeek
+			m.state.SetCurrentGameWeek(&gameWeek)
 			return m, fetchGameWeeksCmd(m.apiClient)
 		}
 		return m, nil
@@ -298,22 +290,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fixtureUpdatedMsg:
 		if msg.err != nil {
 			m.err = msg.err
-		} else {
-			// Refresh fixtures
-			if m.state.CurrentGameWeek != nil {
+			if msg.shouldFetch && m.state.CurrentGameWeek != nil {
 				return m, fetchFixturesCmd(m.apiClient, m.state.CurrentGameWeek.GameWeekID)
 			}
+			return m, nil
+		}
+		m.replaceFixture(msg.fixture)
+		m.setCurrentGameWeek(msg.gameWeek)
+		if msg.shouldFetch && m.state.CurrentGameWeek != nil {
+			return m, fetchFixturesCmd(m.apiClient, m.state.CurrentGameWeek.GameWeekID)
 		}
 		return m, nil
 
 	case batchUpdatedMsg:
 		if msg.err != nil {
 			m.err = msg.err
-		} else {
-			// Refresh fixtures
-			if m.state.CurrentGameWeek != nil {
+			if msg.shouldFetch && m.state.CurrentGameWeek != nil {
 				return m, fetchFixturesCmd(m.apiClient, m.state.CurrentGameWeek.GameWeekID)
 			}
+			return m, nil
+		}
+		m.state.SetFixtures(msg.fixtures)
+		m.setCurrentGameWeek(msg.gameWeek)
+		m.buildFixturesTable()
+		if msg.shouldFetch && m.state.CurrentGameWeek != nil {
+			return m, fetchFixturesCmd(m.apiClient, m.state.CurrentGameWeek.GameWeekID)
 		}
 		return m, nil
 
@@ -333,11 +334,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Route to appropriate screen
 	switch m.currentScreen {
-	case authScreenType:
-		var cmd tea.Cmd
-		m.authScreen, cmd = m.authScreen.Update(msg)
-		return m, cmd
-
 	case prefixScreenType:
 		return m.updatePrefixScreen(msg)
 
@@ -372,39 +368,40 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "m":
 			// Make this gameweek current (update dates in DynamoDB)
 			if m.isReadOnly() {
-				m.err = fmt.Errorf("dev environment is read-only")
+				m.err = fmt.Errorf("writes are not enabled for this environment")
 				return m, nil
 			}
 			if m.state.CurrentGameWeek != nil {
-				return m, makeGameWeekCurrentCmd(m.state.CurrentGameWeek, m.prefix, m.dynamoClient)
+				return m, makeGameWeekCurrentCmd(*m.state.CurrentGameWeek, m.prefix, m.dynamoClient)
 			}
 			return m, nil
-		// case "c":
-		// 	// Create default team (only for current gameweek) - DISABLED
-		// 	if m.state.CurrentGameWeek != nil {
-		// 		// Check if this is the actual current gameweek
-		// 		now := time.Now()
-		// 		var currentGW *models.GameWeek
-		// 		for i := range m.state.GameWeeks {
-		// 			gw := &m.state.GameWeeks[i]
-		// 			startDate, _ := time.Parse(time.RFC3339, gw.CustomerStartDate)
-		// 			endDate, _ := time.Parse(time.RFC3339, gw.CustomerEndDate)
-		// 			if now.After(startDate) && now.Before(endDate) {
-		// 				currentGW = gw
-		// 				break
-		// 			}
-		// 		}
-		//
-		// 		if currentGW == nil || currentGW.GameWeekID != m.state.CurrentGameWeek.GameWeekID {
-		// 			m.err = fmt.Errorf("can only create team for current gameweek")
-		// 			return m, nil
-		// 		}
-		// 	}
-		// 	return m, createDefaultTeamCmd(m.apiClient)
+		case "c":
+			if m.isReadOnly() {
+				m.err = fmt.Errorf("writes are not enabled for this environment")
+				return m, nil
+			}
+			if m.state.CurrentGameWeek != nil {
+				now := time.Now()
+				var currentGameWeek *models.GameWeek
+				for i := range m.state.GameWeeks {
+					gameWeek := &m.state.GameWeeks[i]
+					startDate, _ := time.Parse(time.RFC3339, gameWeek.CustomerStartDate)
+					endDate, _ := time.Parse(time.RFC3339, gameWeek.CustomerEndDate)
+					if now.After(startDate) && now.Before(endDate) {
+						currentGameWeek = gameWeek
+						break
+					}
+				}
+				if currentGameWeek == nil || currentGameWeek.GameWeekID != m.state.CurrentGameWeek.GameWeekID {
+					m.err = fmt.Errorf("can only create team for current gameweek")
+					return m, nil
+				}
+			}
+			return m, createDefaultTeamCmd(m.apiClient, m.prefix)
 		case "b":
 			// Open batch update modal
 			if m.isReadOnly() {
-				m.err = fmt.Errorf("dev environment is read-only")
+				m.err = fmt.Errorf("writes are not enabled for this environment")
 				return m, nil
 			}
 			if m.state.CurrentGameWeek != nil && len(m.state.Fixtures) > 0 {
@@ -412,10 +409,10 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.batchPresetIdx = 0
 			}
 			return m, nil
-		case "c":
+		case "x":
 			// Show close gameweek confirmation modal
 			if m.isReadOnly() {
-				m.err = fmt.Errorf("dev environment is read-only")
+				m.err = fmt.Errorf("writes are not enabled for this environment")
 				return m, nil
 			}
 			if m.state.CurrentGameWeek != nil {
@@ -515,11 +512,6 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 					for i := 0; i <= 90; i += 10 {
 						m.fieldOptions = append(m.fieldOptions, fmt.Sprintf("%d", i))
 					}
-				case 4: // Clock Sec
-					m.fieldOptions = []string{}
-					for i := 0; i <= 50; i += 10 {
-						m.fieldOptions = append(m.fieldOptions, fmt.Sprintf("%d", i))
-					}
 				}
 				return m, nil
 			}
@@ -538,7 +530,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.fixtureSelectMode && !m.editingFixture {
 				// Open edit modal for selected fixture
 				if m.isReadOnly() {
-					m.err = fmt.Errorf("dev environment is read-only")
+					m.err = fmt.Errorf("writes are not enabled for this environment")
 					return m, nil
 				}
 				m.selectedFixtureIdx = m.fixturesTable.Cursor()
@@ -550,8 +542,8 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "s":
 			// Save goals from goal modal
 			if m.showGoalModal {
-				fixture := &m.state.Fixtures[m.selectedFixtureIdx]
-				fixture.Goals = m.pendingGoals
+				fixture := m.state.Fixtures[m.selectedFixtureIdx]
+				fixture.Goals = slices.Clone(m.pendingGoals)
 				m.showGoalModal = false
 				m.fixtureSelectMode = false
 				m.pendingGoals = nil
@@ -603,7 +595,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// No goal changes, save directly
 				m.editingFixture = false
 				m.fixtureSelectMode = false
-				return m, updateFixtureCmd(&fixture, m.prefix, m.state.CurrentGameWeek, m.state.Fixtures)
+				return m, updateFixtureCmd(fixture, m.prefix, m.state.CurrentGameWeek, m.state.Fixtures)
 			}
 			return m, nil
 		case "esc":
@@ -669,7 +661,7 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedFixtureIdx < len(m.state.Fixtures) {
 					f := &m.state.Fixtures[m.selectedFixtureIdx]
 					if f.Period == models.PeriodFirstHalf || f.Period == models.PeriodSecondHalf {
-						maxField = 4
+						maxField = 3
 					}
 				}
 				if m.editModalField < maxField {
@@ -721,17 +713,14 @@ func (m Model) updatePrefixScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.prefix = m.input
 				m.apiClient = aws.NewAPIClient(fmt.Sprintf("https://%s.dev.cf.playtheseven.com", m.input))
 			}
-			if m.bootstrapToken != "" {
-				m.apiClient.SetIDToken(m.bootstrapToken)
-			} else {
-				m.apiClient.SetIDToken(m.authClient.GetAccessToken())
-			}
+			m.apiClient.SetIDToken(m.accessToken)
+			m.apiClient.SetTokenRefresher(m.tokenRefresher)
 			m.apiClient.SetAPIKey(m.apiKey)
 
 			// Recreate DynamoDB client with correct table name
 			ctx := context.Background()
 			tableName := models.TableName(m.prefix, "GameWeek")
-			dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", tableName)
+			dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", m.prefix, tableName)
 			if err != nil {
 				m.err = fmt.Errorf("failed to create dynamo client: %w", err)
 				return m, nil
@@ -809,11 +798,6 @@ func (m *Model) incrementFixtureField(delta int) {
 		if newMin >= 0 && newMin <= 90 {
 			f.ClockTimeMin = newMin
 		}
-	case 4: // Clock Sec
-		newSec := f.ClockTimeSec + delta
-		if newSec >= 0 && newSec <= 59 {
-			f.ClockTimeSec = newSec
-		}
 	}
 }
 
@@ -831,9 +815,6 @@ func (m *Model) applyFieldSelection() {
 	case 3: // Clock Min
 		val, _ := strconv.Atoi(selected)
 		f.ClockTimeMin = val
-	case 4: // Clock Sec
-		val, _ := strconv.Atoi(selected)
-		f.ClockTimeSec = val
 	}
 }
 
@@ -932,7 +913,7 @@ func (m *Model) buildFixturesTable() {
 				clockTime = startTime.Format("15:04")
 			}
 		} else if f.Period == models.PeriodFirstHalf || f.Period == models.PeriodSecondHalf {
-			clockTime = fmt.Sprintf("%d:%02d", f.ClockTimeMin, f.ClockTimeSec)
+			clockTime = fmt.Sprintf("%d", f.ClockTimeMin)
 		}
 
 		rows = append(rows, table.Row{
@@ -1011,16 +992,6 @@ func (m Model) updateGameweekScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	switch m.currentScreen {
-	case authScreenType:
-		view := m.authScreen.View()
-		if m.err != nil {
-			errMsg := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("196")).
-				Render(fmt.Sprintf("\n\nError: %v", m.err))
-			view += errMsg
-		}
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, view)
-
 	case prefixScreenType:
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.viewPrefixScreen())
 
@@ -1356,9 +1327,10 @@ func (m Model) viewEditModal() string {
 		Width(50)
 
 	content := titleStyle.Render("Edit Fixture") + "\n\n"
-	content += fmt.Sprintf("%s vs %s\n\n",
+	content += fmt.Sprintf("%s vs %s\n",
 		f.Participants.Home.TeamNameShort,
 		f.Participants.Away.TeamNameShort)
+	content += highlightStyle.Render("Fixture edits do not emit player events, trigger scoring, or move league tables.") + "\n\n"
 
 	// Period selection
 	periodLabel := "Period: "
@@ -1395,12 +1367,6 @@ func (m Model) viewEditModal() string {
 			clockMinLabel = highlightStyle.Render("> Clock Min: ")
 		}
 		content += clockMinLabel + fmt.Sprintf("%d\n", f.ClockTimeMin)
-
-		clockSecLabel := "Clock Sec: "
-		if m.editModalField == 4 {
-			clockSecLabel = highlightStyle.Render("> Clock Sec: ")
-		}
-		content += clockSecLabel + fmt.Sprintf("%d\n", f.ClockTimeSec)
 	}
 
 	// Show dropdown if field select is active
@@ -1430,7 +1396,8 @@ func (m Model) viewBatchModal() string {
 
 	content := titleStyle.Render("Batch Update Fixtures") + "\n\n"
 	content += fmt.Sprintf("GameWeek: %s\n", m.state.CurrentGameWeek.GameWeekID)
-	content += fmt.Sprintf("Fixtures: %d\n\n", len(m.state.Fixtures))
+	content += fmt.Sprintf("Fixtures: %d\n", len(m.state.Fixtures))
+	content += highlightStyle.Render("Fixture edits do not emit player events, trigger scoring, or move league tables.") + "\n\n"
 	content += "Select preset:\n\n"
 
 	presets := []struct {
@@ -1537,14 +1504,6 @@ func (m Model) viewGoalModal() string {
 }
 
 // Messages
-type authSuccessMsg struct {
-	token string
-}
-
-type authErrorMsg struct {
-	err error
-}
-
 type gameWeeksLoadedMsg struct {
 	gameWeeks []models.GameWeek
 	err       error
@@ -1571,18 +1530,22 @@ type teamCreatedMsg struct {
 }
 
 type gameWeekUpdatedMsg struct {
-	gameWeek *models.GameWeek
+	gameWeek models.GameWeek
 	err      error
 }
 
 type fixtureUpdatedMsg struct {
-	fixture *models.Fixture
-	err     error
+	fixture     models.Fixture
+	gameWeek    *models.GameWeek
+	shouldFetch bool
+	err         error
 }
 
 type batchUpdatedMsg struct {
-	count int
-	err   error
+	fixtures    []models.Fixture
+	gameWeek    *models.GameWeek
+	shouldFetch bool
+	err         error
 }
 
 type githubActionMsg struct {
@@ -1596,16 +1559,6 @@ type gameWeekClosedMsg struct {
 }
 
 // Commands
-func authenticateCmd(client *aws.AuthClient, username, password string) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		if err := client.SignIn(ctx, username, password); err != nil {
-			return authErrorMsg{err: err}
-		}
-		return authSuccessMsg{token: client.GetAccessToken()}
-	}
-}
-
 func fetchGameWeeksCmd(client *aws.APIClient) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -1617,12 +1570,13 @@ func fetchGameWeeksCmd(client *aws.APIClient) tea.Cmd {
 		gameWeeks := make([]models.GameWeek, 0, len(data))
 		for _, item := range data {
 			gw := models.GameWeek{
-				GameWeekID:        getString(item, "gameWeekId"),
-				Label:             getString(item, "label"),
-				FixturesStartDate: getString(item, "fixturesStartDate"),
-				FixturesEndDate:   getString(item, "fixturesEndDate"),
-				CustomerStartDate: getString(item, "customerStartDate"),
-				CustomerEndDate:   getString(item, "customerEndDate"),
+				GameWeekID:            getString(item, "gameWeekId"),
+				Label:                 getString(item, "label"),
+				FixturesStartDate:     getString(item, "fixturesStartDate"),
+				FixturesEndDate:       getString(item, "fixturesEndDate"),
+				CustomerStartDate:     getString(item, "customerStartDate"),
+				CustomerEndDate:       getString(item, "customerEndDate"),
+				CompetitionCalendarID: getString(item, "competitionCalendarId"),
 			}
 			gameWeeks = append(gameWeeks, gw)
 		}
@@ -1662,7 +1616,6 @@ func parseFixture(m map[string]interface{}) models.Fixture {
 		StartDate:     getString(m, "startDate"),
 		Period:        models.FixturePeriod(getString(m, "period")),
 		ClockTimeMin:  getInt(m, "clockTimeMin"),
-		ClockTimeSec:  getInt(m, "clockTimeSec"),
 		HomeTeamID:    getString(m, "homeTeamId"),
 		AwayTeamID:    getString(m, "awayTeamId"),
 		FixtureStatus: getString(m, "fixtureStatus"),
@@ -1757,8 +1710,16 @@ func fetchSelectionCmd(client *aws.APIClient) tea.Cmd {
 	}
 }
 
-func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
+func isAvailableForSelection(player models.Player) bool {
+	return !player.Ineligible && player.InjuryStatus != "INJURED" &&
+		player.SuspensionStatus != "SUSPENDED" && player.MatchDaySquadStatus != "NONE"
+}
+
+func createDefaultTeamCmd(client *aws.APIClient, prefix string) tea.Cmd {
 	return func() tea.Msg {
+		if err := aws.AssertWritable(prefix); err != nil {
+			return teamCreatedMsg{err: err}
+		}
 		logger.Println("Creating default team...")
 
 		ctx := context.Background()
@@ -1780,12 +1741,16 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 			for _, item := range playerList {
 				if playerMap, ok := item.(map[string]interface{}); ok {
 					players = append(players, models.Player{
-						PlayerID:  getString(playerMap, "playerId"),
-						FirstName: getString(playerMap, "firstName"),
-						LastName:  getString(playerMap, "lastName"),
-						Position:  models.Position(getString(playerMap, "position")),
-						TeamID:    getString(playerMap, "teamId"),
-						TeamName:  getString(playerMap, "teamName"),
+						PlayerID:            getString(playerMap, "playerId"),
+						FirstName:           getString(playerMap, "firstName"),
+						LastName:            getString(playerMap, "lastName"),
+						Position:            models.Position(getString(playerMap, "position")),
+						TeamID:              getString(playerMap, "teamId"),
+						TeamName:            getString(playerMap, "teamName"),
+						Ineligible:          playerMap["ineligible"] == true,
+						InjuryStatus:        getString(playerMap, "injuryStatus"),
+						SuspensionStatus:    getString(playerMap, "suspensionStatus"),
+						MatchDaySquadStatus: getString(playerMap, "matchDaySquadStatus"),
 					})
 				}
 			}
@@ -1802,7 +1767,7 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 		// Get 3 forwards first
 		logger.Println("Selecting 3 forwards...")
 		for _, p := range players {
-			if p.Position == models.PositionForward && !usedTeams[p.TeamID] && len(forwards) < 3 {
+			if p.Position == models.PositionForward && isAvailableForSelection(p) && !usedTeams[p.TeamID] && len(forwards) < 3 {
 				forwards = append(forwards, p)
 				usedTeams[p.TeamID] = true
 				logger.Printf("  Selected forward: %s %s (%s)", p.FirstName, p.LastName, p.TeamName)
@@ -1818,7 +1783,7 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 		logger.Println("Selecting 4 mids/defenders...")
 		for _, p := range players {
 			if (p.Position == models.PositionMidfielder || p.Position == models.PositionDefender) &&
-				!usedTeams[p.TeamID] && len(others) < 4 {
+				isAvailableForSelection(p) && !usedTeams[p.TeamID] && len(others) < 4 {
 				others = append(others, p)
 				usedTeams[p.TeamID] = true
 				logger.Printf("  Selected %s: %s %s (%s)", p.Position, p.FirstName, p.LastName, p.TeamName)
@@ -1834,15 +1799,29 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 		selected := append(forwards, others...)
 		logger.Printf("Total selected: %d players (3F + 4M/D)", len(selected))
 
-		// Create selection payload
+		starPlayerIndex := -1
+		for i, player := range selected {
+			if isAvailableForSelection(player) {
+				starPlayerIndex = i
+				break
+			}
+		}
+		if starPlayerIndex == -1 {
+			return teamCreatedMsg{err: fmt.Errorf("no eligible player available for starPlayer")}
+		}
+
 		selections := make(map[string]interface{})
-		for i, p := range selected {
-			selections[fmt.Sprintf("player%d", i+1)] = map[string]string{"id": p.PlayerID}
+		for i, player := range selected {
+			selection := map[string]interface{}{"id": player.PlayerID}
+			if i == starPlayerIndex {
+				selection["starPlayer"] = true
+			}
+			selections[fmt.Sprintf("player%d", i+1)] = selection
 		}
 
 		// Submit selection
 		logger.Println("Submitting team selection...")
-		if err := client.PutSelections(ctx, selections); err != nil {
+		if err := client.PutSelections(ctx, prefix, selections); err != nil {
 			logger.Printf("ERROR: Failed to submit selections: %v", err)
 			return teamCreatedMsg{err: err}
 		}
@@ -1874,206 +1853,164 @@ func createDefaultTeamCmd(client *aws.APIClient) tea.Cmd {
 	}
 }
 
-func makeGameWeekCurrentCmd(gw *models.GameWeek, prefix string, dynamoClient *aws.DynamoDBClient) tea.Cmd {
+func makeGameWeekCurrentCmd(gameWeek models.GameWeek, prefix string, dynamoClient *aws.DynamoDBClient) tea.Cmd {
+	ownedGameWeek := gameWeek
 	return func() tea.Msg {
-		ctx := context.Background()
-
-		// Set dates to make this gameweek current
-		now := time.Now()
-		gw.CustomerStartDate = now.Add(-24 * time.Hour).Format(time.RFC3339)
-		gw.CustomerEndDate = now.Add(6 * 24 * time.Hour).Format(time.RFC3339)
-		gw.FixturesStartDate = now.Add(-12 * time.Hour).Format(time.RFC3339)
-		gw.FixturesEndDate = now.Add(5 * 24 * time.Hour).Format(time.RFC3339)
-
-		// Update in DynamoDB using the passed client (already configured for GameWeeks table)
-		if err := dynamoClient.UpdateGameWeek(ctx, gw); err != nil {
+		if err := aws.AssertWritable(prefix); err != nil {
 			return gameWeekUpdatedMsg{err: err}
 		}
 
-		return gameWeekUpdatedMsg{gameWeek: gw}
+		ctx := context.Background()
+		now := time.Now()
+		ownedGameWeek.CustomerStartDate = now.Add(-24 * time.Hour).Format(time.RFC3339)
+		ownedGameWeek.CustomerEndDate = now.Add(6 * 24 * time.Hour).Format(time.RFC3339)
+		ownedGameWeek.FixturesStartDate = now.Add(-12 * time.Hour).Format(time.RFC3339)
+		ownedGameWeek.FixturesEndDate = now.Add(5 * 24 * time.Hour).Format(time.RFC3339)
+
+		if err := dynamoClient.UpdateGameWeek(ctx, ownedGameWeek); err != nil {
+			return gameWeekUpdatedMsg{err: err}
+		}
+		return gameWeekUpdatedMsg{gameWeek: ownedGameWeek}
 	}
 }
 
-func updateFixtureCmd(fixture *models.Fixture, prefix string, gameWeek *models.GameWeek, allFixtures []models.Fixture) tea.Cmd {
+func updateFixtureCmd(fixture models.Fixture, prefix string, gameWeek *models.GameWeek, allFixtures []models.Fixture) tea.Cmd {
+	ownedFixture := fixture
+	ownedGameWeek := cloneGameWeek(gameWeek)
+	ownedFixtures := slices.Clone(allFixtures)
 	return func() tea.Msg {
-		logger.Printf("Updating fixture: %s", fixture.FixtureID)
-
-		// Validate before saving
-		if err := fixture.Validate(); err != nil {
-			logger.Printf("ERROR: Validation failed: %v", err)
-			return fixtureUpdatedMsg{err: fmt.Errorf("validation failed: %w", err)}
+		// Keyboard edits are applied to model state before the save is attempted,
+		// so every failure path must refetch or the UI keeps showing unpersisted values.
+		if err := aws.AssertWritable(prefix); err != nil {
+			return fixtureUpdatedMsg{err: err, shouldFetch: true}
 		}
 
-		ctx := context.Background()
-
-		// Create DynamoDB client for Fixtures table
-		tableName := models.TableName(prefix, "GameWeekFixtures")
-
-		logger.Printf("Using table: %s", tableName)
-		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", tableName)
-		if err != nil {
-			logger.Printf("ERROR: Failed to create dynamo client: %v", err)
-			return fixtureUpdatedMsg{err: fmt.Errorf("failed to create dynamo client: %w", err)}
+		if ownedFixture.FixtureStatus == "" {
+			ownedFixture.FixtureStatus = "FIXTURE"
 		}
-
-		// Ensure FixtureStatus is set
-		if fixture.FixtureStatus == "" {
-			fixture.FixtureStatus = "FIXTURE"
-		}
-
 		now := time.Now().UTC()
 		pastStart := now.Add(-5 * time.Minute).Format(time.RFC3339)
 		futureStart := now.Add(10 * time.Minute).Format(time.RFC3339)
+		if ownedFixture.Period != models.PeriodPreMatch {
+			ownedFixture.StartDate = pastStart
+		}
+		ensureFixtureMetadata(&ownedFixture)
+		if err := ownedFixture.Validate(); err != nil {
+			return fixtureUpdatedMsg{err: fmt.Errorf("validation failed: %w", err), shouldFetch: true}
+		}
+		replaceFixture(ownedFixtures, ownedFixture)
 
-		// Update startDate if going live (not PRE_MATCH)
-		if fixture.Period != models.PeriodPreMatch {
-			fixture.StartDate = pastStart
+		ctx := context.Background()
+		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", prefix, models.TableName(prefix, "GameWeekFixtures"))
+		if err != nil {
+			return fixtureUpdatedMsg{err: fmt.Errorf("failed to create dynamo client: %w", err), shouldFetch: true}
+		}
+		if err := dynamoClient.UpdateFixture(ctx, ownedFixture); err != nil {
+			return fixtureUpdatedMsg{err: err, shouldFetch: true}
 		}
 
-		// Ensure metadata exists with default periods
-		if fixture.Metadata == nil {
-			fixture.Metadata = map[string]interface{}{
-				"periods": map[string]interface{}{
-					"FIRST_HALF":  map[string]interface{}{"expectedLengthMins": 45},
-					"SECOND_HALF": map[string]interface{}{"expectedLengthMins": 45},
-				},
-			}
-		}
-
-		logger.Printf("Fixture data: Period=%s, HomeScore=%v, AwayScore=%v, Clock=%d:%d",
-			fixture.Period, fixture.HomeScore, fixture.AwayScore, fixture.ClockTimeMin, fixture.ClockTimeSec)
-
-		// Update in DynamoDB
-		if err := dynamoClient.UpdateFixture(ctx, fixture); err != nil {
-			logger.Printf("ERROR: Failed to update fixture in DynamoDB: %v", err)
-			return fixtureUpdatedMsg{err: err}
-		}
-
-		logger.Printf("Successfully updated fixture: %s", fixture.FixtureID)
-
-		// Check if GameWeek needs updating
-		if gameWeek != nil {
-			var newStartDate string
-			shouldUpdate := false
-
-			if fixture.Period != models.PeriodPreMatch && gameWeek.ShouldUpdateStartDate(pastStart) {
-				// Going live and gameweek start is in future
+		newStartDate := ""
+		if ownedGameWeek != nil {
+			if ownedFixture.Period != models.PeriodPreMatch && ownedGameWeek.ShouldUpdateStartDate(pastStart) {
 				newStartDate = pastStart
-				shouldUpdate = true
-			} else if fixture.Period == models.PeriodPreMatch && models.AllFixturesPreMatch(allFixtures) {
-				// All fixtures now pre-match, push gameweek start to future
+			} else if ownedFixture.Period == models.PeriodPreMatch && models.AllFixturesPreMatch(ownedFixtures) {
 				newStartDate = futureStart
-				shouldUpdate = true
-			}
-
-			if shouldUpdate {
-				gameWeekTable := models.TableName(prefix, "GameWeek")
-
-				gwClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", gameWeekTable)
-				if err != nil {
-					logger.Printf("ERROR: Failed to create gameweek dynamo client: %v", err)
-					return fixtureUpdatedMsg{err: fmt.Errorf("failed to create gameweek dynamo client: %w", err)}
-				}
-
-				gameWeek.FixturesStartDate = newStartDate
-				if err := gwClient.UpdateGameWeek(ctx, gameWeek); err != nil {
-					logger.Printf("ERROR: Failed to update gameweek: %v", err)
-					return fixtureUpdatedMsg{err: fmt.Errorf("failed to update gameweek: %w", err)}
-				}
-				logger.Printf("Updated GameWeek %s fixturesStartDate to %s", gameWeek.GameWeekID, newStartDate)
 			}
 		}
+		if err := applyGameWeekStartDate(ctx, prefix, ownedGameWeek, newStartDate); err != nil {
+			return fixtureUpdatedMsg{err: err, shouldFetch: true}
+		}
 
-		return fixtureUpdatedMsg{fixture: fixture}
+		return fixtureUpdatedMsg{fixture: ownedFixture, gameWeek: ownedGameWeek, shouldFetch: true}
 	}
 }
 
 func batchUpdateFixturesCmd(fixtures []models.Fixture, preset string, prefix string, gameWeek *models.GameWeek) tea.Cmd {
+	ownedFixtures := slices.Clone(fixtures)
+	ownedGameWeek := cloneGameWeek(gameWeek)
 	return func() tea.Msg {
-		logger.Printf("Batch update started: preset=%s, prefix=%s, fixtures=%d", preset, prefix, len(fixtures))
-
-		ctx := context.Background()
-
-		fixturesTable := models.TableName(prefix, "GameWeekFixtures")
-
-		logger.Printf("Creating DynamoDB client for table: %s", fixturesTable)
-		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", fixturesTable)
-		if err != nil {
-			logger.Printf("ERROR: Failed to create dynamo client: %v", err)
-			return batchUpdatedMsg{err: fmt.Errorf("failed to create dynamo client: %w", err)}
+		if err := aws.AssertWritable(prefix); err != nil {
+			return batchUpdatedMsg{err: err}
 		}
 
 		now := time.Now().UTC()
 		futureStart := now.Add(10 * time.Minute).Format(time.RFC3339)
 		pastStart := now.Add(-5 * time.Minute).Format(time.RFC3339)
-
-		for i := range fixtures {
-			f := &fixtures[i]
-			logger.Printf("Updating fixture %d/%d: %s", i+1, len(fixtures), f.FixtureID)
-
-			f.ApplyPreset(preset, futureStart, pastStart)
-
-			logger.Printf("  Period: %s, Clock: %d:%d", f.Period, f.ClockTimeMin, f.ClockTimeSec)
-
-			// Validate before saving
-			if err := f.Validate(); err != nil {
-				logger.Printf("ERROR: Validation failed for fixture %s: %v", f.FixtureID, err)
-				return batchUpdatedMsg{err: fmt.Errorf("validation failed for %s: %w", f.FixtureID, err)}
+		for i := range ownedFixtures {
+			ownedFixtures[i].ApplyPreset(preset, futureStart, pastStart)
+			ensureFixtureMetadata(&ownedFixtures[i])
+			if err := ownedFixtures[i].Validate(); err != nil {
+				return batchUpdatedMsg{err: fmt.Errorf("validation failed for %s: %w", ownedFixtures[i].FixtureID, err)}
 			}
-
-			// Ensure metadata
-			if f.Metadata == nil {
-				f.Metadata = map[string]interface{}{
-					"periods": map[string]interface{}{
-						"FIRST_HALF":  map[string]interface{}{"expectedLengthMins": 45},
-						"SECOND_HALF": map[string]interface{}{"expectedLengthMins": 45},
-					},
-				}
-			}
-
-			if err := dynamoClient.UpdateFixture(ctx, f); err != nil {
-				logger.Printf("ERROR: Failed to update fixture %s: %v", f.FixtureID, err)
-				return batchUpdatedMsg{err: fmt.Errorf("failed to update fixture %s: %w", f.FixtureID, err)}
-			}
-			logger.Printf("  Successfully updated fixture %s", f.FixtureID)
 		}
 
-		// Update GameWeek start date based on preset
-		if gameWeek != nil {
-			var newStartDate string
-			shouldUpdate := false
+		ctx := context.Background()
+		dynamoClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", prefix, models.TableName(prefix, "GameWeekFixtures"))
+		if err != nil {
+			return batchUpdatedMsg{err: fmt.Errorf("failed to create dynamo client: %w", err)}
+		}
+		for i := range ownedFixtures {
+			if err := dynamoClient.UpdateFixture(ctx, ownedFixtures[i]); err != nil {
+				return batchUpdatedMsg{err: fmt.Errorf("failed to update fixture %s: %w", ownedFixtures[i].FixtureID, err), shouldFetch: true}
+			}
+		}
 
+		newStartDate := ""
+		if ownedGameWeek != nil {
 			if preset == "prematch" {
-				// Pre-match: push start date into future
 				newStartDate = futureStart
-				shouldUpdate = true
-			} else if models.IsLivePreset(preset) && gameWeek.ShouldUpdateStartDate(pastStart) {
-				// Live preset and gameweek start is in future: set to now
+			} else if models.IsLivePreset(preset) && ownedGameWeek.ShouldUpdateStartDate(pastStart) {
 				newStartDate = pastStart
-				shouldUpdate = true
 			}
-
-			if shouldUpdate {
-				gameWeekTable := models.TableName(prefix, "GameWeek")
-
-				gwClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", gameWeekTable)
-				if err != nil {
-					logger.Printf("ERROR: Failed to create gameweek dynamo client: %v", err)
-					return batchUpdatedMsg{err: fmt.Errorf("failed to create gameweek dynamo client: %w", err)}
-				}
-
-				gameWeek.FixturesStartDate = newStartDate
-				if err := gwClient.UpdateGameWeek(ctx, gameWeek); err != nil {
-					logger.Printf("ERROR: Failed to update gameweek: %v", err)
-					return batchUpdatedMsg{err: fmt.Errorf("failed to update gameweek: %w", err)}
-				}
-				logger.Printf("Updated GameWeek %s fixturesStartDate to %s", gameWeek.GameWeekID, newStartDate)
-			}
-
+		}
+		if err := applyGameWeekStartDate(ctx, prefix, ownedGameWeek, newStartDate); err != nil {
+			return batchUpdatedMsg{err: err, shouldFetch: true}
 		}
 
-		logger.Printf("Batch update completed successfully: %d fixtures", len(fixtures))
-		return batchUpdatedMsg{count: len(fixtures)}
+		return batchUpdatedMsg{fixtures: ownedFixtures, gameWeek: ownedGameWeek, shouldFetch: true}
+	}
+}
+
+func cloneGameWeek(gameWeek *models.GameWeek) *models.GameWeek {
+	if gameWeek == nil {
+		return nil
+	}
+	clone := *gameWeek
+	return &clone
+}
+
+func replaceFixture(fixtures []models.Fixture, updated models.Fixture) {
+	for i := range fixtures {
+		if fixtures[i].FixtureID == updated.FixtureID {
+			fixtures[i] = updated
+			return
+		}
+	}
+}
+
+func applyGameWeekStartDate(ctx context.Context, prefix string, gameWeek *models.GameWeek, newStartDate string) error {
+	if gameWeek == nil || newStartDate == "" {
+		return nil
+	}
+	gameWeek.FixturesStartDate = newStartDate
+	gameWeekClient, err := aws.NewDynamoDBClient(ctx, "eu-west-2", prefix, models.TableName(prefix, "GameWeek"))
+	if err != nil {
+		return fmt.Errorf("failed to create gameweek dynamo client: %w", err)
+	}
+	if err := gameWeekClient.UpdateGameWeek(ctx, *gameWeek); err != nil {
+		return fmt.Errorf("failed to update gameweek: %w", err)
+	}
+	return nil
+}
+
+func ensureFixtureMetadata(fixture *models.Fixture) {
+	if fixture.Metadata == nil {
+		fixture.Metadata = map[string]interface{}{
+			"periods": map[string]interface{}{
+				"FIRST_HALF":  map[string]interface{}{"expectedLengthMins": 45},
+				"SECOND_HALF": map[string]interface{}{"expectedLengthMins": 45},
+			},
+		}
 	}
 }
 
