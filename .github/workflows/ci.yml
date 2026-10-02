@@ -15,13 +15,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24'
 
       - name: Download dependencies
         run: go mod download
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./internal/models/... ./pkg/config/...
+        run: go test -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24'
 
       - name: Run go vet
         run: go vet ./...
@@ -59,7 +59,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24'
 
       - name: Build
         run: go build -o seven-test-tui ./cmd/main.go
