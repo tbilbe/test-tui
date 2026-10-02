@@ -1,6 +1,7 @@
 package models
 
 import (
+	"os"
 	"testing"
 )
 
@@ -34,49 +35,29 @@ func TestValidateClockTime(t *testing.T) {
 		name    string
 		period  FixturePeriod
 		min     int
-		sec     int
 		wantErr bool
 	}{
-		// PRE_MATCH
-		{"PRE_MATCH at 0:00", PeriodPreMatch, 0, 0, false},
-		{"PRE_MATCH at 1:00 invalid", PeriodPreMatch, 1, 0, true},
-		{"PRE_MATCH at 0:01 invalid", PeriodPreMatch, 0, 1, true},
-
-		// FIRST_HALF
-		{"FIRST_HALF at 0:00", PeriodFirstHalf, 0, 0, false},
-		{"FIRST_HALF at 22:30", PeriodFirstHalf, 22, 30, false},
-		{"FIRST_HALF at 45:00", PeriodFirstHalf, 45, 0, false},
-		{"FIRST_HALF at 45:59", PeriodFirstHalf, 45, 59, false},
-		{"FIRST_HALF at 46:00 invalid", PeriodFirstHalf, 46, 0, true},
-		{"FIRST_HALF negative min invalid", PeriodFirstHalf, -1, 0, true},
-
-		// HALF_TIME
-		{"HALF_TIME at 45:00", PeriodHalfTime, 45, 0, false},
-		{"HALF_TIME at 0:00", PeriodHalfTime, 0, 0, false},
-		{"HALF_TIME at 46:00 invalid", PeriodHalfTime, 46, 0, true},
-
-		// SECOND_HALF
-		{"SECOND_HALF at 45:00", PeriodSecondHalf, 45, 0, false},
-		{"SECOND_HALF at 60:00", PeriodSecondHalf, 60, 0, false},
-		{"SECOND_HALF at 90:00", PeriodSecondHalf, 90, 0, false},
-		{"SECOND_HALF at 44:00 invalid", PeriodSecondHalf, 44, 0, true},
-
-		// FULL_TIME
-		{"FULL_TIME at 90:00", PeriodFullTime, 90, 0, false},
-		{"FULL_TIME at 45:00", PeriodFullTime, 45, 0, false},
-		{"FULL_TIME at 44:00 invalid", PeriodFullTime, 44, 0, true},
-
-		// Invalid seconds
-		{"negative seconds invalid", PeriodFirstHalf, 30, -1, true},
-		{"60 seconds invalid", PeriodFirstHalf, 30, 60, true},
+		{"PRE_MATCH at 0", PeriodPreMatch, 0, false},
+		{"PRE_MATCH at 1 invalid", PeriodPreMatch, 1, true},
+		{"FIRST_HALF at 0", PeriodFirstHalf, 0, false},
+		{"FIRST_HALF at 45", PeriodFirstHalf, 45, false},
+		{"FIRST_HALF at 46 invalid", PeriodFirstHalf, 46, true},
+		{"FIRST_HALF negative min invalid", PeriodFirstHalf, -1, true},
+		{"HALF_TIME at 45", PeriodHalfTime, 45, false},
+		{"HALF_TIME at 0", PeriodHalfTime, 0, false},
+		{"HALF_TIME at 46 invalid", PeriodHalfTime, 46, true},
+		{"SECOND_HALF at 90", PeriodSecondHalf, 90, false},
+		{"SECOND_HALF at 44 invalid", PeriodSecondHalf, 44, true},
+		{"FULL_TIME at 90", PeriodFullTime, 90, false},
+		{"FULL_TIME at 44 invalid", PeriodFullTime, 44, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateClockTime(tt.period, tt.min, tt.sec)
+			err := ValidateClockTime(tt.period, tt.min)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateClockTime(%q, %d, %d) error = %v, wantErr %v",
-					tt.period, tt.min, tt.sec, err, tt.wantErr)
+				t.Errorf("ValidateClockTime(%q, %d) error = %v, wantErr %v",
+					tt.period, tt.min, err, tt.wantErr)
 			}
 		})
 	}
@@ -139,7 +120,6 @@ func TestFixture_Validate(t *testing.T) {
 			fixture: Fixture{
 				Period:       PeriodPreMatch,
 				ClockTimeMin: 0,
-				ClockTimeSec: 0,
 				StartDate:    "2024-03-10T14:30:00Z",
 			},
 			wantErr: false,
@@ -149,7 +129,6 @@ func TestFixture_Validate(t *testing.T) {
 			fixture: Fixture{
 				Period:       PeriodFirstHalf,
 				ClockTimeMin: 30,
-				ClockTimeSec: 45,
 				HomeScore:    intPtr(1),
 				AwayScore:    intPtr(0),
 				StartDate:    "2024-03-10T14:30:00Z",
@@ -161,7 +140,6 @@ func TestFixture_Validate(t *testing.T) {
 			fixture: Fixture{
 				Period:       FixturePeriod("INVALID"),
 				ClockTimeMin: 0,
-				ClockTimeSec: 0,
 				StartDate:    "2024-03-10T14:30:00Z",
 			},
 			wantErr: true,
@@ -171,7 +149,6 @@ func TestFixture_Validate(t *testing.T) {
 			fixture: Fixture{
 				Period:       PeriodPreMatch,
 				ClockTimeMin: 10,
-				ClockTimeSec: 0,
 				StartDate:    "2024-03-10T14:30:00Z",
 			},
 			wantErr: true,
@@ -181,7 +158,6 @@ func TestFixture_Validate(t *testing.T) {
 			fixture: Fixture{
 				Period:       PeriodFirstHalf,
 				ClockTimeMin: 30,
-				ClockTimeSec: 0,
 				HomeScore:    intPtr(-1),
 				StartDate:    "2024-03-10T14:30:00Z",
 			},
@@ -192,7 +168,6 @@ func TestFixture_Validate(t *testing.T) {
 			fixture: Fixture{
 				Period:       PeriodFirstHalf,
 				ClockTimeMin: 30,
-				ClockTimeSec: 0,
 				AwayScore:    intPtr(-1),
 				StartDate:    "2024-03-10T14:30:00Z",
 			},
@@ -203,7 +178,6 @@ func TestFixture_Validate(t *testing.T) {
 			fixture: Fixture{
 				Period:       PeriodFirstHalf,
 				ClockTimeMin: 30,
-				ClockTimeSec: 0,
 				StartDate:    "invalid-date",
 			},
 			wantErr: true,
@@ -232,116 +206,54 @@ func TestFixture_ApplyPreset(t *testing.T) {
 	tests := []struct {
 		name          string
 		preset        string
+		fixtureStatus string
 		wantPeriod    FixturePeriod
 		wantStatus    string
 		wantClockMin  int
-		wantClockSec  int
-		wantHomeScore *int
-		wantAwayScore *int
-		wantGoalsNil  bool
 		wantStartDate string
 	}{
-		{
-			name:          "prematch resets all fields",
-			preset:        "prematch",
-			wantPeriod:    PeriodPreMatch,
-			wantStatus:    "",
-			wantClockMin:  0,
-			wantClockSec:  0,
-			wantHomeScore: nil,
-			wantAwayScore: nil,
-			wantGoalsNil:  true,
-			wantStartDate: futureStart,
-		},
-		{
-			name:          "kickoff sets first half",
-			preset:        "kickoff",
-			wantPeriod:    PeriodFirstHalf,
-			wantStatus:    "IN_PLAY",
-			wantClockMin:  0,
-			wantClockSec:  0,
-			wantStartDate: pastStart,
-		},
-		{
-			name:         "halftime sets half time",
-			preset:       "halftime",
-			wantPeriod:   PeriodHalfTime,
-			wantClockMin: 45,
-			wantClockSec: 0,
-		},
-		{
-			name:         "secondhalf sets second half",
-			preset:       "secondhalf",
-			wantPeriod:   PeriodSecondHalf,
-			wantClockMin: 45,
-			wantClockSec: 0,
-		},
-		{
-			name:         "fulltime sets full time",
-			preset:       "fulltime",
-			wantPeriod:   PeriodFullTime,
-			wantClockMin: 90,
-			wantClockSec: 0,
-		},
+		{"prematch resets all fields", "prematch", "FIXTURE", PeriodPreMatch, "", 0, futureStart},
+		{"kickoff preserves fixture status", "kickoff", "FIXTURE", PeriodFirstHalf, "FIXTURE", 0, pastStart},
+		{"kickoff preserves non-default fixture status", "kickoff", "POSTPONED", PeriodFirstHalf, "POSTPONED", 0, pastStart},
+		{"halftime sets half time", "halftime", "FIXTURE", PeriodHalfTime, "FIXTURE", 45, ""},
+		{"secondhalf sets second half", "secondhalf", "FIXTURE", PeriodSecondHalf, "FIXTURE", 45, ""},
+		{"fulltime sets full time", "fulltime", "FIXTURE", PeriodFullTime, "FIXTURE", 90, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Start with a fixture that has scores and goals (simulating post-match state)
-			homeScore := 2
-			awayScore := 1
 			f := &Fixture{
-				FixtureID:     "fixture-1",
-				GameWeekID:    "30",
+				FixtureStatus: tt.fixtureStatus,
 				Period:        PeriodFullTime,
-				FixtureStatus: "FINISHED",
 				ClockTimeMin:  90,
-				ClockTimeSec:  0,
-				HomeScore:     &homeScore,
-				AwayScore:     &awayScore,
+				HomeScore:     intPtr(2),
+				AwayScore:     intPtr(1),
 				Goals:         []Goal{{GoalID: "goal-1"}},
 				StartDate:     "2026-03-12T12:00:00Z",
 			}
 
+			originalFixtureStatus := f.FixtureStatus
 			f.ApplyPreset(tt.preset, futureStart, pastStart)
 
 			if f.Period != tt.wantPeriod {
 				t.Errorf("Period = %v, want %v", f.Period, tt.wantPeriod)
 			}
+			if f.FixtureStatus != tt.wantStatus {
+				t.Errorf("FixtureStatus = %v, want %v", f.FixtureStatus, tt.wantStatus)
+			}
+			if tt.preset == "kickoff" && f.FixtureStatus != originalFixtureStatus {
+				t.Errorf("FixtureStatus = %v, want original value %v", f.FixtureStatus, originalFixtureStatus)
+			}
 			if f.ClockTimeMin != tt.wantClockMin {
 				t.Errorf("ClockTimeMin = %v, want %v", f.ClockTimeMin, tt.wantClockMin)
 			}
-			if f.ClockTimeSec != tt.wantClockSec {
-				t.Errorf("ClockTimeSec = %v, want %v", f.ClockTimeSec, tt.wantClockSec)
-			}
-
-			// Check fields specific to prematch
 			if tt.preset == "prematch" {
-				if f.FixtureStatus != "" {
-					t.Errorf("FixtureStatus = %v, want empty", f.FixtureStatus)
-				}
-				if f.HomeScore != nil {
-					t.Errorf("HomeScore = %v, want nil", f.HomeScore)
-				}
-				if f.AwayScore != nil {
-					t.Errorf("AwayScore = %v, want nil", f.AwayScore)
-				}
-				if f.Goals != nil {
-					t.Errorf("Goals = %v, want nil", f.Goals)
-				}
-				if f.StartDate != futureStart {
-					t.Errorf("StartDate = %v, want %v", f.StartDate, futureStart)
+				if f.HomeScore != nil || f.AwayScore != nil || f.Goals != nil {
+					t.Error("prematch did not reset scores and goals")
 				}
 			}
-
-			// Check kickoff specific fields
-			if tt.preset == "kickoff" {
-				if f.FixtureStatus != "IN_PLAY" {
-					t.Errorf("FixtureStatus = %v, want IN_PLAY", f.FixtureStatus)
-				}
-				if f.StartDate != pastStart {
-					t.Errorf("StartDate = %v, want %v", f.StartDate, pastStart)
-				}
+			if tt.wantStartDate != "" && f.StartDate != tt.wantStartDate {
+				t.Errorf("StartDate = %v, want %v", f.StartDate, tt.wantStartDate)
 			}
 		})
 	}
@@ -531,21 +443,66 @@ func TestAllFixturesPreMatch(t *testing.T) {
 	}
 }
 
-func TestIsDevEnv(t *testing.T) {
+func TestPositionValues(t *testing.T) {
 	tests := []struct {
-		name   string
-		prefix string
-		want   bool
+		name     string
+		position Position
+		want     string
 	}{
-		{"empty string is dev", "", true},
-		{"dev string is dev", "dev", true},
-		{"branch prefix is not dev", "SE7-2001", false},
-		{"int-dev is not dev", "int-dev", false},
+		{"forward", PositionForward, "Forward"},
+		{"midfielder", PositionMidfielder, "Midfielder"},
+		{"defender", PositionDefender, "Defender"},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsDevEnv(tt.prefix); got != tt.want {
-				t.Errorf("IsDevEnv(%q) = %v, want %v", tt.prefix, got, tt.want)
+			if string(tt.position) != tt.want {
+				t.Errorf("position = %q, want %q", tt.position, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsWriteAllowed(t *testing.T) {
+	allowWrites := "true"
+	tests := []struct {
+		name     string
+		envValue *string
+		prefix   string
+		want     bool
+	}{
+		{"environment variable unset", nil, "SE7-tomb", false},
+		{"int-dev requires environment variable", nil, "int-dev", false},
+		{"canonical SE7 prefix", &allowWrites, "SE7-tomb", true},
+		{"lowercase SE7 prefix", &allowWrites, "se7-tomb", true},
+		{"test prefix", &allowWrites, "test", false},
+		{"stage prefix", &allowWrites, "stage", false},
+		{"prod prefix", &allowWrites, "prod", false},
+		{"dev prefix", &allowWrites, "dev", false},
+		{"empty prefix", &allowWrites, "", false},
+		{"int-dev prefix", &allowWrites, "int-dev", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue == nil {
+				originalValue, wasSet := os.LookupEnv(SEVEN_TUI_ALLOW_WRITES)
+				if err := os.Unsetenv(SEVEN_TUI_ALLOW_WRITES); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if wasSet {
+						_ = os.Setenv(SEVEN_TUI_ALLOW_WRITES, originalValue)
+						return
+					}
+					_ = os.Unsetenv(SEVEN_TUI_ALLOW_WRITES)
+				})
+			} else {
+				t.Setenv(SEVEN_TUI_ALLOW_WRITES, *tt.envValue)
+			}
+
+			if got := IsWriteAllowed(tt.prefix); got != tt.want {
+				t.Errorf("IsWriteAllowed(%q) = %v, want %v", tt.prefix, got, tt.want)
 			}
 		})
 	}
