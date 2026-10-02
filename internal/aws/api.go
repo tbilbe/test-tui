@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"reflect"
+	"strings"
 	"time"
 )
 
@@ -25,11 +28,25 @@ func init() {
 	apiLogger = log.New(f, "[api] ", log.LstdFlags)
 }
 
+type TokenRefresher interface {
+	Refresh(context.Context) (string, error)
+}
+
+type apiStatusError struct {
+	statusCode int
+	body       string
+}
+
+func (e *apiStatusError) Error() string {
+	return fmt.Sprintf("API error (status %d): %s", e.statusCode, e.body)
+}
+
 type APIClient struct {
-	baseURL    string
-	httpClient *http.Client
-	idToken    string
-	apiKey     string
+	baseURL        string
+	httpClient     HTTPClient
+	idToken        string
+	apiKey         string
+	tokenRefresher TokenRefresher
 }
 
 func NewAPIClient(baseURL string) *APIClient {
@@ -49,22 +66,54 @@ func (a *APIClient) SetAPIKey(key string) {
 	a.apiKey = key
 }
 
+/**
+ * SetTokenRefresher enables a single token refresh and retry for unauthorized reads.
+ */
+func (a *APIClient) SetTokenRefresher(refresher TokenRefresher) {
+	a.tokenRefresher = refresher
+}
+
 func (a *APIClient) get(ctx context.Context, path string, result interface{}) error {
+	err := a.getOnce(ctx, path, result)
+	var statusError *apiStatusError
+	if !errors.As(err, &statusError) || statusError.statusCode != http.StatusUnauthorized {
+		return err
+	}
+	if !hasTokenRefresher(a.tokenRefresher) {
+		return fmt.Errorf("refresh session after unauthorized response: %w", ErrRefreshTokenNotFound)
+	}
+
+	token, refreshErr := a.tokenRefresher.Refresh(ctx)
+	if refreshErr != nil {
+		return fmt.Errorf("refresh session after unauthorized response: %w", refreshErr)
+	}
+	a.SetIDToken(token)
+	return a.getOnce(ctx, path, result)
+}
+
+func hasTokenRefresher(refresher TokenRefresher) bool {
+	if refresher == nil {
+		return false
+	}
+	value := reflect.ValueOf(refresher)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return !value.IsNil()
+	default:
+		return true
+	}
+}
+
+func (a *APIClient) getOnce(ctx context.Context, path string, result interface{}) error {
 	url := a.baseURL + path
 	apiLogger.Printf("GET %s (auth=%t apiKey=%t)", url, a.idToken != "", a.apiKey != "")
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		apiLogger.Printf("GET %s: build request error: %v", url, err)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-
-	if a.idToken != "" {
-		req.Header.Set("Authorization", "Bearer "+a.idToken)
-	}
-	if a.apiKey != "" {
-		req.Header.Set("x-seven-api-key", a.apiKey)
-	}
+	a.setHeaders(req)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -78,20 +127,29 @@ func (a *APIClient) get(ctx context.Context, path string, result interface{}) er
 		apiLogger.Printf("GET %s: read body error: %v", url, err)
 		return fmt.Errorf("failed to read response: %w", err)
 	}
-
 	apiLogger.Printf("GET %s -> %d (%d bytes)", url, resp.StatusCode, len(body))
 
 	if resp.StatusCode != http.StatusOK {
 		apiLogger.Printf("GET %s: error body: %s", url, string(body))
-		return fmt.Errorf("API error from %s (status %d): %s", url, resp.StatusCode, string(body))
+		if strings.Contains(strings.ToLower(string(body)), "no current game week found") {
+			return ErrNoCurrentGameWeek
+		}
+		return &apiStatusError{statusCode: resp.StatusCode, body: string(body)}
 	}
-
 	if err := json.Unmarshal(body, result); err != nil {
 		apiLogger.Printf("GET %s: unmarshal error: %v", url, err)
 		return fmt.Errorf("failed to unmarshal response: %w", err)
 	}
-
 	return nil
+}
+
+func (a *APIClient) setHeaders(req *http.Request) {
+	if a.idToken != "" {
+		req.Header.Set("Authorization", "Bearer "+a.idToken)
+	}
+	if a.apiKey != "" {
+		req.Header.Set("x-seven-api-key", a.apiKey)
+	}
 }
 
 func (a *APIClient) GetGameWeeks(ctx context.Context) ([]map[string]interface{}, error) {
@@ -135,7 +193,10 @@ func (a *APIClient) GetSelections(ctx context.Context) (map[string]interface{}, 
 	return selections, nil
 }
 
-func (a *APIClient) PutSelections(ctx context.Context, selections map[string]interface{}) error {
+func (a *APIClient) PutSelections(ctx context.Context, prefix string, selections map[string]interface{}) error {
+	if err := AssertWritable(prefix); err != nil {
+		return err
+	}
 	return a.put(ctx, "/game-week/selections", selections)
 }
 
@@ -147,18 +208,12 @@ func (a *APIClient) put(ctx context.Context, path string, body interface{}) erro
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
-	if a.idToken != "" {
-		req.Header.Set("Authorization", "Bearer "+a.idToken)
-	}
-	if a.apiKey != "" {
-		req.Header.Set("x-seven-api-key", a.apiKey)
-	}
+	a.setHeaders(req)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -170,6 +225,5 @@ func (a *APIClient) put(ctx context.Context, path string, body interface{}) erro
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
-
 	return nil
 }

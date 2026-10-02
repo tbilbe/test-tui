@@ -43,10 +43,12 @@ go build -o seven-test-tui ./cmd/main.go
 
 ## 🎯 Purpose
 
-Simplifies testing workflows by providing an intuitive interface for:
+Simplifies fixture-state and read-API QA workflows by providing an intuitive interface for:
 - Viewing gameweeks and fixtures
 - Updating fixture states (period, time, scores)
 - Managing test data without manual DynamoDB edits
+
+> **Scope limit:** Fixture period, score, and named-scorer edits update `GameWeekFixtures` only. They do not emit player events, trigger scoring, or move league tables. Resetting fixtures to `PRE_MATCH` also does not clear player `scoredGoal` or `fixtureComplete` flags; only an Opta ingest runs that backend reset. Re-seed prefix environments periodically with the `Clone env data` GitHub workflow to remove accumulated test drift.
 
 ## 🚀 Quick Start
 
@@ -81,43 +83,47 @@ export AWS_PROFILE=seven_engineer_seven_dev-339713102567
 
 ```bash
 export API_KEY="your-api-key"
-export SEVEN_ACCESS_TOKEN="your-oauth2-access-token"   # recommended, see below
+export API_ENDPOINT="https://dev.cf.playtheseven.com" # change to your deployed prefix when needed
 ```
 
 **Finding your API_KEY**: Use the same value as the mobile app's `.env` `API_KEY`.
 This is sent as the `x-seven-api-key` header so requests go through the CloudFront
-front door (WAF). It is **required** — the app exits if it is not set.
+front door (WAF). It is required for the interactive TUI.
 
 #### Authentication / Bearer token
 
-The read API is **not** protected by Cognito username/password — it expects a
-bwin/Entain **OAuth2 access token** (the mobile app obtains one via
-`{API_ENDPOINT}/oauth2/authorize` with client `Angstrom` and the `scp_angstrom`
-scope). The token is sent as `Authorization: Bearer <token>`.
+The read API accepts a Seven access token: an ES256 KMS-signed JWT minted by the
+Seven auth-server. It is **not** a raw bwin/Entain identity-provider token and it
+is **not** a Cognito `USER_PASSWORD_AUTH` token.
 
-Because a CLI can't easily complete the browser OAuth2 flow yet, the current
-recommended path is to **paste a valid access token**:
+Bootstrap once for each API endpoint:
 
 ```bash
-export SEVEN_ACCESS_TOKEN="<paste a bwin OAuth2 access token>"
+seven-test-tui bootstrap
 ```
 
-When `SEVEN_ACCESS_TOKEN` is set, the app **skips the Cognito login screen** and
-uses the pasted token as the Bearer. Get the token from a logged-in mobile app
-session (e.g. capture the `Authorization` header on a `/game-weeks` request) or a
-browser login at `{API_ENDPOINT}/oauth2/authorize`. Tokens are short-lived, so
-re-paste when it expires.
+The command prints `{API_ENDPOINT}/oauth2/authorize`. Open it in a browser, sign
+in, allow the `seven://` redirect to fail, then paste either the `code` query
+parameter or the full failed deep-link URL back into the terminal. The TUI exchanges
+the code at `/oauth2/token`, stores only the returned refresh token in the OS
+keyring (or a `0600` file under the user config directory if no keyring is
+available), and refreshes the short-lived Seven access token on startup and after a
+401 read response.
 
-> Note: the legacy Cognito username/password flow (`CLIENT_ID` / `USER_POOL_ID`)
-> is still present but currently produces tokens the API authorizer rejects with
-> a 403. Use `SEVEN_ACCESS_TOKEN` until the in-app OAuth2 flow lands. When using
-> the bootstrap token, `CLIENT_ID` is not required.
+The session uses a stable `device_id` of `seven-test-tui-<hostname>`. This is
+intentionally distinct from a mobile device because refresh-token rotation would
+otherwise invalidate that device's session.
+
+`SEVEN_ACCESS_TOKEN` remains an escape hatch for a manually pasted **Seven** access
+JWT. It bypasses stored-session refresh and is not the normal workflow:
+
+```bash
+export SEVEN_ACCESS_TOKEN="<manual Seven access JWT>"
+```
 
 **Optional overrides** (defaults are already set):
 ```bash
-export API_ENDPOINT="https://dev.cf.playtheseven.com"  # default (front door, note the .cf. host)
-export USER_POOL_ID="eu-west-2_uqwEOLO5d"              # default (legacy Cognito flow only)
-export CLIENT_ID="your-cognito-client-id"             # legacy Cognito flow only
+export API_ENDPOINT="https://dev.cf.playtheseven.com"
 ```
 
 ### 3. Run the Application
@@ -126,8 +132,8 @@ export CLIENT_ID="your-cognito-client-id"             # legacy Cognito flow only
 ./seven-test-tui
 ```
 
-**First Run** (with `SEVEN_ACCESS_TOKEN` set):
-1. The app skips login and opens the environment (prefix) screen
+**First Run** (after `seven-test-tui bootstrap`):
+1. The app refreshes the stored session and opens the environment (prefix) screen
 2. Enter your prefix (e.g. `se7-tomb` — casing is normalised to `SE7-` for tables)
 3. The gameweek list will load
 4. Use arrow keys or j/k to navigate
@@ -149,13 +155,15 @@ export CLIENT_ID="your-cognito-client-id"             # legacy Cognito flow only
 
 ### Workflow
 
-1. **Start TUI** → With `SEVEN_ACCESS_TOKEN` set, login is skipped and you go straight to the prefix screen
+1. **Start TUI** → the stored refresh token obtains a fresh Seven access token; use `seven-test-tui bootstrap` if no session is stored
 2. **Select GameWeek** → Navigate list, press Enter
 3. **View Fixtures** → See all fixtures for selected gameweek
 4. **Edit Fixture** → Select fixture, press `e`
 5. **Modify Fields** → Update period, time, scores, start date
 6. **Save Changes** → Press Enter to save to DynamoDB
 7. **Refresh** → Press `r` to see updated data
+
+Fixture edits are for read-API state QA only; they do not exercise scoring behaviour or update player scoring data.
 
 ## 📁 Project Structure
 
@@ -165,7 +173,7 @@ seven-test-tui/
 │   └── main.go              # Application entry point
 ├── internal/
 │   ├── aws/                 # AWS service clients
-│   │   ├── auth.go          # Cognito authentication
+│   │   ├── auth.go          # Auth-server token and refresh-token storage
 │   │   ├── api.go           # Backend API client
 │   │   └── dynamodb.go      # DynamoDB operations
 │   ├── models/              # Data models & state
@@ -192,10 +200,11 @@ See [docs/architecture.md](docs/architecture.md) for detailed architecture docum
 **Key Components**:
 - **Bubbletea**: TUI framework (Model-View-Update pattern)
 - **Lipgloss**: Styling and layout
-- **AWS SDK**: Cognito auth, API calls, DynamoDB updates
+- **AWS SDK**: DynamoDB and EventBridge writes
+- **Auth-server OAuth2**: Browser bootstrap and refresh-token session management
 
 **Data Flow**:
-- **Read**: API endpoints (authenticated with Cognito token)
+- **Read**: API endpoints authenticated with a Seven auth-server JWT
 - **Write**: Direct DynamoDB updates (using AWS credentials)
 
 ## 🚧 Current Status

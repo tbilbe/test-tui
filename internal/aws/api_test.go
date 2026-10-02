@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -66,12 +67,38 @@ func TestPut_SendsApiKeyHeader(t *testing.T) {
 
 	client := NewAPIClient(server.URL)
 	client.SetAPIKey("put-key-456")
+	t.Setenv("SEVEN_TUI_ALLOW_WRITES", "true")
 
-	if err := client.PutSelections(context.Background(), map[string]interface{}{"a": 1}); err != nil {
+	if err := client.PutSelections(context.Background(), "SE7-api-test", map[string]interface{}{"a": 1}); err != nil {
 		t.Fatalf("PutSelections() error = %v", err)
 	}
 
 	if gotAPIKey != "put-key-456" {
 		t.Errorf("x-seven-api-key = %q, want %q", gotAPIKey, "put-key-456")
+	}
+}
+
+func TestPutSelectionsRefusesDisallowedPrefixBeforeSendingRequest(t *testing.T) {
+	t.Setenv("SEVEN_TUI_ALLOW_WRITES", "false")
+	client := NewAPIClient("https://api.example.com")
+
+	err := client.PutSelections(context.Background(), "dev", map[string]interface{}{"player1": "player-1"})
+	if err == nil {
+		t.Fatal("PutSelections() error = nil, want write permission error")
+	}
+}
+
+func TestGetReturnsNoStoredSessionForTypedNilRefresher(t *testing.T) {
+	client := NewAPIClient("https://api.example.com")
+	client.SetIDToken("expired-token")
+	var refresher *fakeRefresher
+	client.SetTokenRefresher(refresher)
+	client.httpClient = fakeHTTPClient{do: func(*http.Request) (*http.Response, error) {
+		return tokenHTTPResponse(http.StatusUnauthorized, `{"errorMessage":"Unauthorized"}`), nil
+	}}
+
+	_, err := client.GetGameWeeks(context.Background())
+	if !errors.Is(err, ErrRefreshTokenNotFound) {
+		t.Fatalf("GetGameWeeks() error = %v, want ErrRefreshTokenNotFound", err)
 	}
 }
