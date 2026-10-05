@@ -83,6 +83,7 @@ export AWS_PROFILE=seven_engineer_seven_dev-339713102567
 
 ```bash
 export API_KEY="your-api-key"
+export SEVEN_ACCESS_TOKEN="your-seven-access-token"
 export API_ENDPOINT="https://dev.cf.playtheseven.com" # change to your deployed prefix when needed
 ```
 
@@ -92,38 +93,37 @@ front door (WAF). It is required for the interactive TUI.
 
 #### Authentication / Bearer token
 
-The read API accepts a Seven access token: an ES256 KMS-signed JWT minted by the
-Seven auth-server. It is **not** a raw bwin/Entain identity-provider token and it
-is **not** a Cognito `USER_PASSWORD_AUTH` token.
+`SEVEN_ACCESS_TOKEN` is required. The read API accepts a Seven access token: an
+ES256 KMS-signed JWT minted by the Seven auth-server. It is **not** a raw
+bwin/Entain identity-provider token and it is **not** a Cognito
+`USER_PASSWORD_AUTH` token.
 
-Bootstrap once for each API endpoint:
-
-```bash
-seven-test-tui bootstrap
-```
-
-The command prints `{API_ENDPOINT}/oauth2/authorize`. Open it in a browser, sign
-in, allow the `seven://` redirect to fail, then paste either the `code` query
-parameter or the full failed deep-link URL back into the terminal. The TUI exchanges
-the code at `/oauth2/token`, stores only the returned refresh token in the OS
-keyring (or a `0600` file under the user config directory if no keyring is
-available), and refreshes the short-lived Seven access token on startup and after a
-401 read response.
-
-The session uses a stable `device_id` of `seven-test-tui-<hostname>`. This is
-intentionally distinct from a mobile device because refresh-token rotation would
-otherwise invalidate that device's session.
-
-`SEVEN_ACCESS_TOKEN` remains an escape hatch for a manually pasted **Seven** access
-JWT. It bypasses stored-session refresh and is not the normal workflow:
+To capture one, run the mobile app in a simulator and sign in. Open the simulator
+dev tools, find any request to `/game-weeks`, and copy the `Authorization` header
+value without the `Bearer ` prefix:
 
 ```bash
-export SEVEN_ACCESS_TOKEN="<manual Seven access JWT>"
+export SEVEN_ACCESS_TOKEN="your-seven-access-token"
 ```
+
+The token is short-lived. If the TUI reports that it is expired or rejected, copy a
+fresh token from the mobile app dev tools and re-export `SEVEN_ACCESS_TOKEN`.
+
+#### Enabling writes
+
+The TUI starts read-only unless you explicitly enable writes:
+
+```bash
+export SEVEN_TUI_ALLOW_WRITES=true
+```
+
+Writes also require a prefix that canonicalises to `SE7-*` or is exactly `int-dev`.
+AWS credentials must be available because writes go directly to DynamoDB.
 
 **Optional overrides** (defaults are already set):
 ```bash
 export API_ENDPOINT="https://dev.cf.playtheseven.com"
+export AWS_REGION="eu-west-2"
 ```
 
 ### 3. Run the Application
@@ -132,8 +132,8 @@ export API_ENDPOINT="https://dev.cf.playtheseven.com"
 ./seven-test-tui
 ```
 
-**First Run** (after `seven-test-tui bootstrap`):
-1. The app refreshes the stored session and opens the environment (prefix) screen
+**First Run**:
+1. The startup preflight shows the effective `API_ENDPOINT` and `AWS_REGION`
 2. Enter your prefix (e.g. `se7-tomb` — casing is normalised to `SE7-` for tables)
 3. The gameweek list will load
 4. Use arrow keys or j/k to navigate
@@ -155,7 +155,7 @@ export API_ENDPOINT="https://dev.cf.playtheseven.com"
 
 ### Workflow
 
-1. **Start TUI** → the stored refresh token obtains a fresh Seven access token; use `seven-test-tui bootstrap` if no session is stored
+1. **Start TUI** → it checks required environment variables, then uses `SEVEN_ACCESS_TOKEN` for read requests
 2. **Select GameWeek** → Navigate list, press Enter
 3. **View Fixtures** → See all fixtures for selected gameweek
 4. **Edit Fixture** → Select fixture, press `e`
@@ -173,7 +173,6 @@ seven-test-tui/
 │   └── main.go              # Application entry point
 ├── internal/
 │   ├── aws/                 # AWS service clients
-│   │   ├── auth.go          # Auth-server token and refresh-token storage
 │   │   ├── api.go           # Backend API client
 │   │   └── dynamodb.go      # DynamoDB operations
 │   ├── models/              # Data models & state
@@ -201,7 +200,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed architecture docum
 - **Bubbletea**: TUI framework (Model-View-Update pattern)
 - **Lipgloss**: Styling and layout
 - **AWS SDK**: DynamoDB and EventBridge writes
-- **Auth-server OAuth2**: Browser bootstrap and refresh-token session management
+- **Environment configuration**: Required API key and manually captured Seven access token
 
 **Data Flow**:
 - **Read**: API endpoints authenticated with a Seven auth-server JWT

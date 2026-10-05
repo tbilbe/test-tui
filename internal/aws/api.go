@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 )
@@ -28,8 +26,9 @@ func init() {
 	apiLogger = log.New(f, "[api] ", log.LstdFlags)
 }
 
-type TokenRefresher interface {
-	Refresh(context.Context) (string, error)
+// HTTPClient performs HTTP requests for APIClient.
+type HTTPClient interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
 type apiStatusError struct {
@@ -42,11 +41,10 @@ func (e *apiStatusError) Error() string {
 }
 
 type APIClient struct {
-	baseURL        string
-	httpClient     HTTPClient
-	idToken        string
-	apiKey         string
-	tokenRefresher TokenRefresher
+	baseURL    string
+	httpClient HTTPClient
+	idToken    string
+	apiKey     string
 }
 
 func NewAPIClient(baseURL string) *APIClient {
@@ -66,42 +64,8 @@ func (a *APIClient) SetAPIKey(key string) {
 	a.apiKey = key
 }
 
-/**
- * SetTokenRefresher enables a single token refresh and retry for unauthorized reads.
- */
-func (a *APIClient) SetTokenRefresher(refresher TokenRefresher) {
-	a.tokenRefresher = refresher
-}
-
 func (a *APIClient) get(ctx context.Context, path string, result interface{}) error {
-	err := a.getOnce(ctx, path, result)
-	var statusError *apiStatusError
-	if !errors.As(err, &statusError) || statusError.statusCode != http.StatusUnauthorized {
-		return err
-	}
-	if !hasTokenRefresher(a.tokenRefresher) {
-		return fmt.Errorf("refresh session after unauthorized response: %w", ErrRefreshTokenNotFound)
-	}
-
-	token, refreshErr := a.tokenRefresher.Refresh(ctx)
-	if refreshErr != nil {
-		return fmt.Errorf("refresh session after unauthorized response: %w", refreshErr)
-	}
-	a.SetIDToken(token)
 	return a.getOnce(ctx, path, result)
-}
-
-func hasTokenRefresher(refresher TokenRefresher) bool {
-	if refresher == nil {
-		return false
-	}
-	value := reflect.ValueOf(refresher)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return !value.IsNil()
-	default:
-		return true
-	}
 }
 
 func (a *APIClient) getOnce(ctx context.Context, path string, result interface{}) error {
@@ -131,6 +95,9 @@ func (a *APIClient) getOnce(ctx context.Context, path string, result interface{}
 
 	if resp.StatusCode != http.StatusOK {
 		apiLogger.Printf("GET %s: error body: %s", url, string(body))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return ErrAccessTokenExpired
+		}
 		if strings.Contains(strings.ToLower(string(body)), "no current game week found") {
 			return ErrNoCurrentGameWeek
 		}

@@ -112,7 +112,6 @@ type Model struct {
 	apiClient          *aws.APIClient
 	apiKey             string
 	accessToken        string
-	tokenRefresher     aws.TokenRefresher
 	dynamoClient       *aws.DynamoDBClient
 	currentScreen      screenType
 	input              string
@@ -165,19 +164,17 @@ func (m *Model) setCurrentGameWeek(gameWeek *models.GameWeek) {
 		m.state.SetCurrentGameWeek(&updated)
 	}
 }
-func NewModel(apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient, apiKey, accessToken string, tokenRefresher aws.TokenRefresher) Model {
+func NewModel(apiClient *aws.APIClient, dynamoClient *aws.DynamoDBClient, apiKey, accessToken string) Model {
 	apiClient.SetIDToken(accessToken)
-	apiClient.SetTokenRefresher(tokenRefresher)
 
 	return Model{
-		state:          models.NewAppState(),
-		apiClient:      apiClient,
-		apiKey:         apiKey,
-		accessToken:    accessToken,
-		tokenRefresher: tokenRefresher,
-		dynamoClient:   dynamoClient,
-		currentScreen:  prefixScreenType,
-		inputMode:      true,
+		state:         models.NewAppState(),
+		apiClient:     apiClient,
+		apiKey:        apiKey,
+		accessToken:   accessToken,
+		dynamoClient:  dynamoClient,
+		currentScreen: prefixScreenType,
+		inputMode:     true,
 	}
 }
 
@@ -372,6 +369,10 @@ func (m Model) updateFixtureScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.state.CurrentGameWeek != nil {
+				if m.dynamoClient == nil {
+					m.err = fmt.Errorf("no DynamoDB client — check AWS credentials and re-enter the prefix")
+					return m, nil
+				}
 				return m, makeGameWeekCurrentCmd(*m.state.CurrentGameWeek, m.prefix, m.dynamoClient)
 			}
 			return m, nil
@@ -714,7 +715,6 @@ func (m Model) updatePrefixScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.apiClient = aws.NewAPIClient(fmt.Sprintf("https://%s.dev.cf.playtheseven.com", m.input))
 			}
 			m.apiClient.SetIDToken(m.accessToken)
-			m.apiClient.SetTokenRefresher(m.tokenRefresher)
 			m.apiClient.SetAPIKey(m.apiKey)
 
 			// Recreate DynamoDB client with correct table name
