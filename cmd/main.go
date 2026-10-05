@@ -1,12 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"strings"
+	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/angstromsports/seven-test-tui/internal/aws"
@@ -22,10 +22,13 @@ var (
 )
 
 func main() {
-	// Version must work before config, so an unconfigured install can still be identified.
 	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
 		fmt.Printf("seven-test-tui %s (commit %s, built %s)\n", version, commit, date)
 		return
+	}
+	if len(os.Args) > 1 {
+		fmt.Fprintln(os.Stderr, "Usage: seven-test-tui [version]")
+		os.Exit(2)
 	}
 
 	cfg, err := config.Load()
@@ -33,80 +36,33 @@ func main() {
 		fmt.Printf("Configuration error: %v\n", err)
 		os.Exit(1)
 	}
-	if len(os.Args) > 1 {
-		if os.Args[1] != "bootstrap" {
-			fmt.Fprintln(os.Stderr, "Usage: seven-test-tui [bootstrap|version]")
-			os.Exit(2)
-		}
-		bootstrap(cfg)
-		return
+
+	credentialContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	awsConfig, err := awsconfig.LoadDefaultConfig(credentialContext, awsconfig.WithRegion(cfg.AWSRegion))
+	var credentialsProvider config.CredentialsProvider
+	if err == nil {
+		credentialsProvider = awsConfig.Credentials
 	}
-	if err := cfg.ValidateForApplication(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	preflight := cfg.Preflight(credentialsProvider)
+	fmt.Print(preflight.String())
+	if preflight.HasErrors() {
 		os.Exit(1)
 	}
+
 	run(cfg)
 }
 
-func bootstrap(cfg *config.Config) {
-	client, err := newTokenClient(cfg)
-	if err != nil {
-		fmt.Printf("Failed to initialise token storage: %v\n", err)
-		return
-	}
-
-	authorizationURL, err := client.AuthorizationURL()
-	if err != nil {
-		fmt.Printf("Failed to create authorization URL: %v\n", err)
-		return
-	}
-	fmt.Printf("Open this URL in a browser and complete sign-in:\n%s\n\n", authorizationURL)
-	fmt.Println("The seven:// deep link will fail. Paste its full URL here:")
-	authorizationResponse, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		fmt.Printf("Failed to read authorization response: %v\n", err)
-		return
-	}
-	if _, err := client.ExchangeAuthorizationCode(context.Background(), authorizationResponse); err != nil {
-		fmt.Printf("Bootstrap failed: %v\n", err)
-		return
-	}
-	fmt.Println("Session saved. Start seven-test-tui normally.")
-}
-
 func run(cfg *config.Config) {
-	ctx := context.Background()
-	accessToken := cfg.AccessToken
-	var tokenClient *aws.TokenClient
-	if accessToken == "" {
-		var err error
-		tokenClient, err = newTokenClient(cfg)
-		if err == nil {
-			accessToken, err = tokenClient.Refresh(ctx)
-		}
-		if err != nil {
-			fmt.Printf("Authentication error: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
 	apiClient := aws.NewAPIClient(cfg.APIEndpoint)
 	apiClient.SetAPIKey(cfg.APIKey)
-	apiClient.SetIDToken(accessToken)
-	var tokenRefresher aws.TokenRefresher
-	if tokenClient != nil {
-		tokenRefresher = tokenClient
-		apiClient.SetTokenRefresher(tokenRefresher)
-	}
+	apiClient.SetIDToken(cfg.AccessToken)
 
-	dynamoClient, err := aws.NewDynamoDBClient(ctx, cfg.AWSRegion, cfg.Prefix, cfg.Prefix+"-GameWeek")
-	if err != nil {
-		fmt.Printf("Failed to create DynamoDB client: %v\n", err)
-		os.Exit(1)
-	}
-
+	// The DynamoDB client is built on the prefix screen, once a prefix is known.
+	// Building one here would use the wrong table and abort startup on an
+	// unresolved AWS profile, contradicting the preflight's read-only warning.
 	program := tea.NewProgram(
-		ui.NewModel(apiClient, dynamoClient, cfg.APIKey, accessToken, tokenRefresher),
+		ui.NewModel(apiClient, nil, cfg.APIKey, cfg.AccessToken),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
@@ -114,12 +70,4 @@ func run(cfg *config.Config) {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func newTokenClient(cfg *config.Config) (*aws.TokenClient, error) {
-	store, err := aws.NewRefreshTokenStore(cfg.APIEndpoint)
-	if err != nil {
-		return nil, err
-	}
-	return aws.NewTokenClient(strings.TrimRight(cfg.APIEndpoint, "/"), aws.DeviceID(), store), nil
 }
