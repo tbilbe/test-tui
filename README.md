@@ -1,5 +1,7 @@
 # Seven Test TUI
 
+<img width="546" height="177" alt="Screenshot 2026-10-05 at 16 37 04" src="https://github.com/user-attachments/assets/6b8b5c2e-b0ba-4e63-8137-39bb071d21a2" />
+
 A terminal user interface (TUI) application for testing and QA on the Seven mobile app. This tool removes the requirement to understand backend processes and data structures when testing the mobile app.
 
 ## 📥 Download & Install
